@@ -10,5 +10,5 @@ memory:
   - CLAUDE.md
 focus: >
   1.6.1: Windows port and installers built on macOS; Windows runtime unverified. NEXT: run test_core.exe,
-  the installer and REAPER checks on Windows (list in CLAUDE.md), then publish the release.
+  the installer and REAPER checks on Windows (docs/WINDOWS-TEST.md), then publish the release.
 updated: 2026-09-21
