@@ -12,6 +12,8 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   double _offShown;
   NSSegmentedControl *_srcSeg;
   NSSegmentedControl *_muteSeg;
+  NSFont *_fTc, *_fUi;      // looked up once: a lookup that fails mid-session must not reach the draw path
+  NSArray<NSColor *> *_colors;  // indexed by UiColor
   int _tickCount;
   NSTimer *_timer;
 }
@@ -25,6 +27,16 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   self = [super initWithFrame:NSMakeRect(0, 0, kW, kH)];
   if (!self) return nil;
   _plug = plug;
+  _fTc = [NSFont monospacedSystemFontOfSize:58 weight:NSFontWeightSemibold] ?: [NSFont userFixedPitchFontOfSize:58] ?: [NSFont systemFontOfSize:58];
+  _fUi = [NSFont systemFontOfSize:13];
+  NSColor *amber = [NSColor colorWithSRGBRed:1.0 green:0.78 blue:0.30 alpha:1];
+  _colors = @[
+    [NSColor colorWithSRGBRed:0.42 green:0.46 blue:0.51 alpha:1],  // kUiOff, 3.6:1 on the ground
+    [NSColor colorWithSRGBRed:0.60 green:0.65 blue:0.71 alpha:1],  // kUiDim
+    [NSColor colorWithSRGBRed:0.36 green:1.0 blue:0.58 alpha:1],   // kUiLtc
+    [NSColor colorWithSRGBRed:0.45 green:0.78 blue:1.0 alpha:1],   // kUiDaw
+    amber, amber                                                   // kUiCoast, kUiWarn
+  ];
 
   _ipField = [[NSTextField alloc] initWithFrame:NSMakeRect(86, kH - kBar + 7, 150, 22)];
   _ipField.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
@@ -154,42 +166,49 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 
 - (BOOL)acceptsFirstResponder { return YES; }
 
-- (void)drawCentered:(NSString *)s font:(NSFont *)font color:(NSColor *)c y:(CGFloat)y {
-  NSDictionary *a = @{NSFontAttributeName : font, NSForegroundColorAttributeName : c};
-  NSSize sz = [s sizeWithAttributes:a];
-  [s drawAtPoint:NSMakePoint(floor((kW - sz.width) / 2), y) withAttributes:a];
+- (NSDictionary *)attrsWithFont:(NSFont *)font color:(UiColor)c {
+  NSMutableDictionary *a = [NSMutableDictionary dictionaryWithCapacity:2];
+  if (font) a[NSFontAttributeName] = font;
+  NSColor *col = (NSUInteger)c < _colors.count ? _colors[c] : nil;
+  if (col) a[NSForegroundColorAttributeName] = col;
+  return a;
+}
+
+- (void)drawCentered:(const char *)s font:(NSFont *)font color:(UiColor)c y:(CGFloat)y {
+  NSString *str = s ? [NSString stringWithUTF8String:s] : nil;
+  if (!str.length) return;
+  NSDictionary *a = [self attrsWithFont:font color:c];
+  [str drawAtPoint:NSMakePoint(floor((kW - [str sizeWithAttributes:a].width) / 2), y) withAttributes:a];
+}
+
+- (void)draw:(const char *)s at:(NSPoint)pt color:(UiColor)c rightAligned:(BOOL)right {
+  NSString *str = s ? [NSString stringWithUTF8String:s] : nil;
+  if (!str.length) return;
+  NSDictionary *a = [self attrsWithFont:_fUi color:c];
+  if (right) pt.x -= [str sizeWithAttributes:a].width;
+  [str drawAtPoint:pt withAttributes:a];
 }
 
 - (void)drawRect:(NSRect)dirty {
-  [[NSColor colorWithSRGBRed:0.055 green:0.062 blue:0.075 alpha:1] setFill];
-  NSRectFill(self.bounds);
-  if (!_plug) return;
-  const UiState u = ui_state(*_plug);
-  NSColor *dim = [NSColor colorWithSRGBRed:0.60 green:0.65 blue:0.71 alpha:1];
-  auto color = [&](UiColor c) -> NSColor * {
-    switch (c) {
-      case kUiLtc: return [NSColor colorWithSRGBRed:0.36 green:1.0 blue:0.58 alpha:1];
-      case kUiDaw: return [NSColor colorWithSRGBRed:0.45 green:0.78 blue:1.0 alpha:1];
-      case kUiCoast: case kUiWarn: return [NSColor colorWithSRGBRed:1.0 green:0.78 blue:0.30 alpha:1];
-      case kUiOff: return [NSColor colorWithSRGBRed:0.42 green:0.46 blue:0.51 alpha:1];  // 3.6:1 on the ground
-      default: return dim;
-    }
-  };
-  [self drawCentered:@(u.tc) font:[NSFont monospacedSystemFontOfSize:58 weight:NSFontWeightSemibold] color:color(u.tcColor) y:18];
-  [self drawCentered:@(u.line.c_str()) font:[NSFont systemFontOfSize:13] color:color(u.lineColor) y:96];
+  @try {  // an exception here would otherwise terminate the host
+    [[NSColor colorWithSRGBRed:0.055 green:0.062 blue:0.075 alpha:1] setFill];
+    NSRectFill(self.bounds);
+    if (!_plug) return;
+    const UiState u = ui_state(*_plug);
+    [self drawCentered:u.tc font:_fTc color:u.tcColor y:18];
+    [self drawCentered:u.line.c_str() font:_fUi color:u.lineColor y:96];
 
-  [[NSColor colorWithSRGBRed:0.10 green:0.11 blue:0.13 alpha:1] setFill];
-  NSRectFill(NSMakeRect(0, kH - kBar, kW, kBar));
-  NSDictionary *la = @{NSFontAttributeName : [NSFont systemFontOfSize:13], NSForegroundColorAttributeName : dim};
-  [@(S::artnetTo) drawAtPoint:NSMakePoint(12, kH - kBar + 10) withAttributes:la];
-  [@(S::offset) drawAtPoint:NSMakePoint(12, kH - kBar + 43) withAttributes:la];
-  [@(S::source) drawAtPoint:NSMakePoint(12, kH - kBar + 77) withAttributes:la];
-  [@(S::ms) drawAtPoint:NSMakePoint(184, kH - kBar + 43) withAttributes:la];
-  if (!u.offsetNote.empty()) [@(u.offsetNote.c_str()) drawAtPoint:NSMakePoint(216, kH - kBar + 43) withAttributes:la];
-
-  NSDictionary *sa = @{NSFontAttributeName : [NSFont systemFontOfSize:13], NSForegroundColorAttributeName : color(u.sendColor)};
-  NSString *st = @(u.send.c_str());
-  [st drawAtPoint:NSMakePoint(kW - [st sizeWithAttributes:sa].width - 12, kH - kBar + 10) withAttributes:sa];
+    [[NSColor colorWithSRGBRed:0.10 green:0.11 blue:0.13 alpha:1] setFill];
+    NSRectFill(NSMakeRect(0, kH - kBar, kW, kBar));
+    [self draw:S::artnetTo at:NSMakePoint(12, kH - kBar + 10) color:kUiDim rightAligned:NO];
+    [self draw:S::offset at:NSMakePoint(12, kH - kBar + 43) color:kUiDim rightAligned:NO];
+    [self draw:S::source at:NSMakePoint(12, kH - kBar + 77) color:kUiDim rightAligned:NO];
+    [self draw:S::ms at:NSMakePoint(184, kH - kBar + 43) color:kUiDim rightAligned:NO];
+    [self draw:u.offsetNote.c_str() at:NSMakePoint(216, kH - kBar + 43) color:kUiDim rightAligned:NO];
+    [self draw:u.send.c_str() at:NSMakePoint(kW - 12, kH - kBar + 10) color:u.sendColor rightAligned:YES];
+  } @catch (NSException *e) {
+    NSLog(@"CT LTC ArtNet: draw failed: %@", e);
+  }
 }
 
 @end

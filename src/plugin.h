@@ -6,7 +6,7 @@
 #include "ltc_core.h"
 #include "strings.h"
 
-#define CTLTC_VERSION "1.6.0"
+#define CTLTC_VERSION "1.6.1"
 
 struct Plugin {
   clap_plugin_t plugin;
