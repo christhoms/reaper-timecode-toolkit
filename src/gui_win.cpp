@@ -106,13 +106,13 @@ void paint(Gui &g, HDC dc) {
   fill(dc, g.rc(0, 0, kGuiW, kGuiH), kGround);
   SetBkMode(dc, TRANSPARENT);
   text(dc, g.fTc, ui_color(u.tcColor), u.tc, g.rc(0, 14, kGuiW, 76), DT_CENTER | DT_VCENTER);
-  text(dc, g.fUi, kDim, u.line, g.rc(0, 94, kGuiW, 20), DT_CENTER | DT_VCENTER);
+  text(dc, g.fUi, ui_color(u.lineColor), u.line, g.rc(0, 94, kGuiW, 20), DT_CENTER | DT_VCENTER);
 
   fill(dc, g.rc(0, kBarY, kGuiW, kGuiBar), kBarBg);
-  text(dc, g.fUi, kDim, "Art-Net to", g.rc(12, kBarY + 7, 70, 22), DT_LEFT | DT_VCENTER);
-  text(dc, g.fUi, kDim, "Offset", g.rc(12, kBarY + 40, 70, 22), DT_LEFT | DT_VCENTER);
-  text(dc, g.fUi, kDim, "Source", g.rc(12, kBarY + 73, 70, 22), DT_LEFT | DT_VCENTER);
-  text(dc, g.fUi, kDim, "ms", g.rc(184, kBarY + 40, 30, 22), DT_LEFT | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::artnetTo, g.rc(12, kBarY + 7, 70, 22), DT_LEFT | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::offset, g.rc(12, kBarY + 40, 70, 22), DT_LEFT | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::source, g.rc(12, kBarY + 73, 70, 22), DT_LEFT | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::ms, g.rc(184, kBarY + 40, 30, 22), DT_LEFT | DT_VCENTER);
   if (!u.offsetNote.empty()) text(dc, g.fUi, kDim, u.offsetNote, g.rc(216, kBarY + 40, 120, 22), DT_LEFT | DT_VCENTER);
   text(dc, g.fUi, ui_color(u.sendColor), u.send, g.rc(kGuiW - 160, kBarY + 7, 148, 22), DT_RIGHT | DT_VCENTER);
 
@@ -131,12 +131,11 @@ void paint(Gui &g, HDC dc) {
     DeleteObject(b);
   }
 
-  static const char *names[3] = {"Auto", "LTC only", "DAW only"};
   const int mode = g.plug->mode.load();
   for (int i = 0; i < 3; i++) {
     const RECT r = seg_rect(g, i);
     fill(dc, r, i == mode ? kSel : kField);
-    text(dc, g.fUi, i == mode ? kText : kDim, names[i], r, DT_CENTER | DT_VCENTER);
+    text(dc, g.fUi, i == mode ? kText : kDim, S::sourceNames[i], r, DT_CENTER | DT_VCENTER);
   }
 }
 
@@ -261,7 +260,6 @@ bool gui_parent(Plugin *s, const clap_window_t *win) {
   };
   g->ip = edit(kIdIp, 90, kBarY + 9, 142, ES_LEFT);
   g->off = edit(kIdOffset, 88, kBarY + 42, 64, ES_RIGHT);
-  SendMessageW(g->ip, EM_SETCUEBANNER, TRUE, (LPARAM)L"IP address");
   SetWindowTextA(g->ip, s->ip.c_str());
   show_offset(*g, s->sender.offsetMs());
   SetTimer(g->hwnd, kTimerTick, 33, nullptr);

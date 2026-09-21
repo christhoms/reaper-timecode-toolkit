@@ -38,7 +38,6 @@ Per-machine settings: `~/Library/Application Support/CT LTC ArtNet/` or `%APPDAT
 - DAW time follows the project frame rate and start offset in REAPER; other hosts send 30 fps. 23.976 sends as 24; 48, 50, 59.94 and 60 send at half rate.
 - Auto falls back to DAW time 0.8 s after the last LTC frame, 0.15 s on an input with unknown signal, at once on a silent input.
 - A negative offset overshoots by that amount at a stop.
-- Colour: green LTC, blue DAW time, amber coasting.
 
 ## REAPER
 

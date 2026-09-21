@@ -512,6 +512,7 @@ class Sender {
   }
 
   uint64_t sent() const { return sent_.load(std::memory_order_relaxed); }
+  bool failed() const { return failed_.load(std::memory_order_relaxed); }  // last packet was refused by the OS
 
   // positive: later. Negative: earlier, running ahead of the decoder by |offset| (overshoots by that at a stop).
   void setOffsetMs(double ms) { offsetMs_.store(clamp_offset(ms), std::memory_order_relaxed); }
@@ -527,8 +528,9 @@ class Sender {
                            (unsigned char)tc.f, (unsigned char)tc.s, (unsigned char)tc.m, (unsigned char)tc.h, (unsigned char)type_};
     std::lock_guard<std::mutex> g(destMutex_);
     if (!haveDest_ || sock_ == kNoSocket) return;
-    if (sendto(sock_, (const char *)p, sizeof(p), 0, (sockaddr *)&dest_, sizeof(dest_)) == (int)sizeof(p))
-      sent_.fetch_add(1, std::memory_order_relaxed);
+    const bool ok = sendto(sock_, (const char *)p, sizeof(p), 0, (sockaddr *)&dest_, sizeof(dest_)) == (int)sizeof(p);
+    failed_.store(!ok, std::memory_order_relaxed);
+    if (ok) sent_.fetch_add(1, std::memory_order_relaxed);
   }
 
   void loop() {
@@ -598,6 +600,7 @@ class Sender {
   Obs ring_[kRing];
   std::atomic<uint32_t> wr_{0}, rd_{0};
   std::atomic<uint64_t> sent_{0};
+  std::atomic<bool> failed_{false};
   std::atomic<double> offsetMs_{0.0};
   int fps_ = 30, type_ = 3;
   bool df_ = false;

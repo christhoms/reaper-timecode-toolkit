@@ -8,13 +8,13 @@ const char *kFeatures[] = {CLAP_PLUGIN_FEATURE_UTILITY, CLAP_PLUGIN_FEATURE_ANAL
 const clap_plugin_descriptor_t kDesc = {
     CLAP_VERSION_INIT,
     "uk.co.christhoms.ltc-artnet",
-    "CT LTC to Art-Net Timecode",
-    "Chris Thoms",
+    S::pluginName,
+    S::vendor,
     "",
     "",
     "",
     CTLTC_VERSION,
-    "SMPTE LTC to Art-Net timecode",
+    S::pluginDescription,
     kFeatures,
 };
 
@@ -121,7 +121,7 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
     std::memset(info, 0, sizeof(*info));
     info->id = kParamSource;
     info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_ENUM | CLAP_PARAM_IS_AUTOMATABLE;
-    std::snprintf(info->name, sizeof(info->name), "Source");
+    std::snprintf(info->name, sizeof(info->name), "%s", S::paramSource);
     info->min_value = 0; info->max_value = 2; info->default_value = 0;
     return true;
   }
@@ -129,7 +129,7 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
     std::memset(info, 0, sizeof(*info));
     info->id = kParamCoast;
     info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
-    std::snprintf(info->name, sizeof(info->name), "Coast (frames)");
+    std::snprintf(info->name, sizeof(info->name), "%s", S::paramCoast);
     info->min_value = 0; info->max_value = ctltc::kCoastMax; info->default_value = ctltc::kCoastDefault;
     return true;
   }
@@ -137,13 +137,13 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
   std::memset(info, 0, sizeof(*info));
   info->id = kParamOffset;
   info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-  std::snprintf(info->name, sizeof(info->name), "Offset (ms)");
+  std::snprintf(info->name, sizeof(info->name), "%s", S::paramOffset);
   info->min_value = ctltc::kOffsetMinMs;
   info->max_value = ctltc::kOffsetMaxMs;
   info->default_value = 0.0;
   return true;
 }
-const char *kSourceNames[3] = {"Auto", "LTC only", "DAW only"};
+const auto &kSourceNames = S::sourceNames;
 bool params_get_value(const clap_plugin_t *p, clap_id id, double *v) {
   if (id == kParamSource) { *v = P(p)->mode.load(); return true; }
   if (id == kParamCoast) { *v = P(p)->coastLimit.load(); return true; }
@@ -155,12 +155,12 @@ bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf
   if (id == kParamSource) { std::snprintf(buf, size, "%s", kSourceNames[std::min(2, std::max(0, int(std::lround(v))))]); return true; }
   if (id == kParamCoast) {
     const int c = ctltc::clamp_coast(v);
-    if (c == 0) std::snprintf(buf, size, "off");
-    else std::snprintf(buf, size, "%d frames", c);
+    if (c == 0) std::snprintf(buf, size, "%s", S::coastOff);
+    else S::coastText(buf, size, c);
     return true;
   }
   if (id != kParamOffset) return false;
-  std::snprintf(buf, size, "%+.1f ms", v);
+  S::offsetText(buf, size, v);
   return true;
 }
 bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, double *v) {
@@ -169,7 +169,7 @@ bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, do
     *v = std::min(2, std::max(0, std::atoi(txt)));
     return true;
   }
-  if (id == kParamCoast && txt) { *v = !std::strcmp(txt, "off") ? 0 : ctltc::clamp_coast(std::atof(txt)); return true; }
+  if (id == kParamCoast && txt) { *v = !std::strcmp(txt, S::coastOff) ? 0 : ctltc::clamp_coast(std::atof(txt)); return true; }
   if (id != kParamOffset || !txt) return false;
   *v = ctltc::clamp_offset(std::atof(txt));
   return true;
@@ -289,7 +289,7 @@ bool ports_get(const clap_plugin_t *, uint32_t index, bool is_input, clap_audio_
   if (index != 0) return false;
   std::memset(info, 0, sizeof(*info));
   info->id = is_input ? 1 : 2;
-  std::snprintf(info->name, sizeof(info->name), "%s", is_input ? "LTC in" : "Out");
+  std::snprintf(info->name, sizeof(info->name), "%s", is_input ? S::portIn : S::portOut);
   info->flags = CLAP_AUDIO_PORT_IS_MAIN;
   info->channel_count = 2;
   info->port_type = CLAP_PORT_STEREO;

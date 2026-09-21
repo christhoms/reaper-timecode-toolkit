@@ -4,6 +4,7 @@
 #include <clap/clap.h>
 
 #include "ltc_core.h"
+#include "strings.h"
 
 #define CTLTC_VERSION "1.5.0"
 
@@ -87,7 +88,7 @@ enum UiColor { kUiOff, kUiDim, kUiLtc, kUiDaw, kUiCoast, kUiWarn };
 struct UiState {
   char tc[16];
   std::string line, send, offsetNote;
-  UiColor tcColor = kUiOff, sendColor = kUiDim;
+  UiColor tcColor = kUiOff, lineColor = kUiDim, sendColor = kUiWarn;
 };
 
 inline UiState ui_state(Plugin &s) {
@@ -97,28 +98,27 @@ inline UiState ui_state(Plugin &s) {
   const bool daw = locked && s.dispSource.load() == 2;
   const int coasted = s.dispCoasted.load();
   const bool coasting = locked && !daw && coasted >= 2;  // a single filled frame is usually confirmed by a late decode
-  const bool df = (rate >> 8) & 1, is2997 = (rate >> 9) & 1;
-  const int fps = rate & 0xff;
+  const bool df = (rate >> 8) & 1;
   std::snprintf(u.tc, sizeof(u.tc), "%02u:%02u:%02u%c%02u", (tc >> 24) & 0xff, (tc >> 16) & 0xff, (tc >> 8) & 0xff, df ? ';' : ':', tc & 0xff);
   u.tcColor = daw ? kUiDaw : coasting ? kUiCoast : locked ? kUiLtc : kUiOff;
 
-  const char *gap = "     ";
+  auto add = [&](const std::string &item) { u.line += (u.line.empty() ? "" : S::sep) + item; };
   if (locked) {
-    if (daw) u.line = std::string("DAW time") + gap;
-    u.line += fps == 30 ? (is2997 ? (df ? "29.97 DF" : "29.97 fps") : "30 fps") : fps == 25 ? "25 fps" : "24 fps";
-    if (coasting) u.line += gap + std::string("coast ") + std::to_string(coasted);
-  } else {
-    u.line = s.mode.load() == ctltc::kSourceDawOnly ? "stopped" : s.signal.load() ? "signal, no lock" : "no LTC";
+    if (daw) add(S::dawTime);
+    add(S::rate(rate & 0xff, (rate >> 9) & 1, df));
+    if (coasting) add(S::coast(coasted));
+  } else if (s.signal.load() && s.mode.load() != ctltc::kSourceDawOnly) {
+    add(S::noLock);
+    u.lineColor = kUiWarn;
   }
   const int latch = s.latchDisp.load();
-  if (latch >= 0) u.line += gap + std::string(latch == 0 ? "LTC L muted" : "LTC R muted");
+  if (latch >= 0) add(S::muted(latch));
 
-  if (s.ip.empty()) { u.send = "no destination"; u.sendColor = kUiWarn; }
-  else if (locked) { u.send = "sending"; u.sendColor = daw ? kUiDaw : kUiLtc; }
-  else u.send = "idle";
+  if (s.ip.empty()) u.send = S::noDestination;
+  else if (locked && s.sender.failed()) u.send = S::sendFailed;
 
   const double offMs = s.sender.offsetMs();
-  if (offMs != 0) { char b[32]; std::snprintf(b, sizeof(b), "%+.2f fr", offMs / (s.frameDur.load() * 1e3)); u.offsetNote = b; }
+  if (offMs != 0) u.offsetNote = S::offsetFrames(offMs / (s.frameDur.load() * 1e3));
   return u;
 }
 

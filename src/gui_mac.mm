@@ -27,7 +27,6 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 
   _ipField = [[NSTextField alloc] initWithFrame:NSMakeRect(86, kH - kBar + 7, 150, 22)];
   _ipField.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
-  _ipField.placeholderString = @"IP address";
   _ipField.stringValue = [NSString stringWithUTF8String:plug->ip.c_str()];
   _ipField.bezelStyle = NSTextFieldRoundedBezel;
   _ipField.focusRingType = NSFocusRingTypeNone;
@@ -59,7 +58,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   [self addSubview:_offStepper];
 
   // source row
-  _srcSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @"Auto", @"LTC only", @"DAW only" ]
+  _srcSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::sourceNames[0]), @(S::sourceNames[1]), @(S::sourceNames[2]) ]
                                               trackingMode:NSSegmentSwitchTrackingSelectOne
                                                     target:self
                                                     action:@selector(sourceChanged:)];
@@ -161,15 +160,15 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     }
   };
   [self drawCentered:@(u.tc) font:[NSFont monospacedSystemFontOfSize:58 weight:NSFontWeightSemibold] color:color(u.tcColor) y:18];
-  [self drawCentered:@(u.line.c_str()) font:[NSFont systemFontOfSize:13] color:dim y:96];
+  [self drawCentered:@(u.line.c_str()) font:[NSFont systemFontOfSize:13] color:color(u.lineColor) y:96];
 
   [[NSColor colorWithSRGBRed:0.10 green:0.11 blue:0.13 alpha:1] setFill];
   NSRectFill(NSMakeRect(0, kH - kBar, kW, kBar));
   NSDictionary *la = @{NSFontAttributeName : [NSFont systemFontOfSize:13], NSForegroundColorAttributeName : dim};
-  [@"Art-Net to" drawAtPoint:NSMakePoint(12, kH - kBar + 10) withAttributes:la];
-  [@"Offset" drawAtPoint:NSMakePoint(12, kH - kBar + 43) withAttributes:la];
-  [@"Source" drawAtPoint:NSMakePoint(12, kH - kBar + 77) withAttributes:la];
-  [@"ms" drawAtPoint:NSMakePoint(184, kH - kBar + 43) withAttributes:la];
+  [@(S::artnetTo) drawAtPoint:NSMakePoint(12, kH - kBar + 10) withAttributes:la];
+  [@(S::offset) drawAtPoint:NSMakePoint(12, kH - kBar + 43) withAttributes:la];
+  [@(S::source) drawAtPoint:NSMakePoint(12, kH - kBar + 77) withAttributes:la];
+  [@(S::ms) drawAtPoint:NSMakePoint(184, kH - kBar + 43) withAttributes:la];
   if (!u.offsetNote.empty()) [@(u.offsetNote.c_str()) drawAtPoint:NSMakePoint(216, kH - kBar + 43) withAttributes:la];
 
   NSDictionary *sa = @{NSFontAttributeName : [NSFont systemFontOfSize:13], NSForegroundColorAttributeName : color(u.sendColor)};
