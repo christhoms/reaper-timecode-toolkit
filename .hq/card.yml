@@ -1,0 +1,14 @@
+# .hq/card.yml, read by the hq harvester. Keep it short; deep memory stays in the repo's own docs.
+name: ltc-artnet
+title: CT LTC to Art-Net Timecode
+domain: showtools
+status: active
+purpose: >
+  CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode, one destination IP. macOS and Windows.
+memory:
+  - README.md
+  - CLAUDE.md
+focus: >
+  1.5.0: Windows port and installers built on macOS; Windows runtime unverified. NEXT: run test_core.exe,
+  the installer and REAPER checks on Windows (list in CLAUDE.md), then publish the release.
+updated: 2026-09-21
