@@ -547,7 +547,7 @@ static void test_plugin(const char *path, Listener &L) {
     static std::vector<unsigned char> blob; static size_t rpos; blob.clear(); rpos = 0;
     clap_ostream_t os{nullptr, [](const clap_ostream_t *, const void *d, uint64_t n) -> int64_t { blob.insert(blob.end(), (const unsigned char *)d, (const unsigned char *)d + n); return (int64_t)n; }};
     clap_istream_t is{nullptr, [](const clap_istream_t *, void *d, uint64_t n) -> int64_t { size_t k = std::min<size_t>(n, blob.size() - rpos); std::memcpy(d, blob.data() + rpos, k); rpos += k; return (int64_t)k; }};
-    CHECK(state && state->save(p, &os) && blob.size() == 9 && blob[4] == 3 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30, "state save (v3: latch right, auto, LTC seen, coast 30)");
+    CHECK(state && state->save(p, &os) && blob.size() == 10 && blob[4] == 4 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1, "state save (v4: latch right, auto, LTC seen, coast 30, mute on)");
     const clap_plugin_t *p2 = fac->create_plugin(fac, &host, desc->id);
     p2->init(p2); 
     auto *state2 = (const clap_plugin_state_t *)p2->get_extension(p2, CLAP_EXT_STATE);
@@ -562,7 +562,7 @@ static void test_plugin(const char *path, Listener &L) {
   {  // the Offset parameter through the CLAP interface
     auto *params = (const clap_plugin_params_t *)p->get_extension(p, CLAP_EXT_PARAMS);
     clap_param_info_t pi; double v = 99; char txt[64] = {0};
-    CHECK(params && params->count(p) == 3 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
+    CHECK(params && params->count(p) == 4 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
     CHECK(params->get_value(p, pi.id, &v) && v == 0.0, "params: default 0 (got %.2f)", v);
     static clap_event_param_value_t ev; std::memset(&ev, 0, sizeof(ev));
     ev.header.size = sizeof(ev); ev.header.type = CLAP_EVENT_PARAM_VALUE; ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID; ev.param_id = pi.id; ev.value = -37.5;
@@ -585,7 +585,7 @@ static void test_plugin(const char *path, Listener &L) {
       ((const clap_plugin_params_t *)pl->get_extension(pl, CLAP_EXT_PARAMS))->flush(pl, &ie, &oe);
     };
     clap_param_info_t pi2; char txt[64] = {0};
-    CHECK(params->count(p) == 3 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
+    CHECK(params->count(p) == 4 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
 
     // run 'seconds' of real-time blocks on plugin pl. ltcFrom/ltcTo: when the right leg carries LTC. pos0: playhead start
     auto run = [&](const clap_plugin_t *pl, double seconds, double pos0, double ltcFrom, double ltcTo, LtcGen *g) {
@@ -676,6 +676,31 @@ static void test_plugin(const char *path, Listener &L) {
       CHECK(L.pk.empty(), "stopped: %zu packets", L.pk.size());
       drop(pl);
     }
+  }
+  {  // Mute LTC off: one-sided LTC passes through untouched; on again: right carries the left leg
+    static clap_event_param_value_t qev;
+    auto setMute = [&](int on) {
+      std::memset(&qev, 0, sizeof(qev)); qev.header.size = sizeof(qev); qev.header.type = CLAP_EVENT_PARAM_VALUE; qev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+      qev.param_id = 4; qev.value = on;
+      clap_input_events_t ie{nullptr, [](const clap_input_events_t *) -> uint32_t { return 1; }, [](const clap_input_events_t *, uint32_t) -> const clap_event_header_t * { return &qev.header; }};
+      clap_output_events_t oe{nullptr, [](const clap_output_events_t *, const clap_event_header_t *) -> bool { return true; }};
+      ((const clap_plugin_params_t *)p->get_extension(p, CLAP_EXT_PARAMS))->flush(p, &ie, &oe);
+    };
+    LtcGen gen5(sr, 30, 30.0, false, tc_to_count(2, 0, 0, 0, 30, false));
+    bool thru = true, routed = true; long n = 0;
+    for (int phase = 0; phase < 2; phase++) {
+      setMute(phase == 0 ? 0 : 1);
+      for (int b = 0; b < int(sr * 1.0 / bs); b++) {
+        for (uint32_t i = 0; i < bs; i++) { l[i] = 0.25f * float(std::sin(double(n++) * 0.05)); r[i] = gen5.next(); }
+        p->process(p, &pr);
+        if (b * bs / sr < 0.5) continue;
+        const bool lSame = !std::memcmp(ol.data(), l.data(), bs * sizeof(float));
+        if (phase == 0) thru = thru && lSame && !std::memcmp(orr.data(), r.data(), bs * sizeof(float));
+        else routed = routed && lSame && !std::memcmp(orr.data(), l.data(), bs * sizeof(float));
+      }
+    }
+    CHECK(thru, "Mute LTC off: both legs must pass through");
+    CHECK(routed, "Mute LTC on: right output must carry the left leg");
   }
   {  // LTC on BOTH legs: nothing to separate, straight through
     LtcGen gen4(sr, 25, 25.0, false, tc_to_count(3, 0, 0, 0, 25, false)); bool thru = true;

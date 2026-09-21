@@ -6,7 +6,7 @@
 #include "ltc_core.h"
 #include "strings.h"
 
-#define CTLTC_VERSION "1.5.0"
+#define CTLTC_VERSION "1.6.0"
 
 struct Plugin {
   clap_plugin_t plugin;
@@ -40,6 +40,8 @@ struct Plugin {
   std::atomic<int> knowledgeDisp{0};           // SourceSelect::knowledge(), mirrored for state save
   std::atomic<int> loadKnowledge{-1};          // state load -> audio thread
   std::atomic<bool> modeFromGui{false};
+  std::atomic<int> muteLtc{1};                 // parameter "Mute LTC"
+  std::atomic<bool> muteFromGui{false};
   bool wasPlaying = false;
   // REAPER project settings, read on the main thread through REAPER's API (other hosts: 30 fps, no offset)
   double (*fnFrameRate)(void *, bool *) = nullptr;
@@ -54,6 +56,12 @@ struct Plugin {
   void setModeFromGui(int m) {
     mode.store(m < 0 || m > 2 ? 0 : m, std::memory_order_relaxed);
     modeFromGui.store(true, std::memory_order_relaxed);
+    if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
+  }
+
+  void setMuteFromGui(bool on) {
+    muteLtc.store(on ? 1 : 0, std::memory_order_relaxed);
+    muteFromGui.store(true, std::memory_order_relaxed);
     if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
   }
 
@@ -112,7 +120,7 @@ inline UiState ui_state(Plugin &s) {
     u.lineColor = kUiWarn;
   }
   const int latch = s.latchDisp.load();
-  if (latch >= 0) add(S::muted(latch));
+  if (latch >= 0) add(S::ltcLeg(latch));
 
   if (s.ip.empty()) u.send = S::noDestination;
   else if (locked && s.sender.failed()) u.send = S::sendFailed;

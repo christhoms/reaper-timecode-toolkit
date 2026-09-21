@@ -27,8 +27,9 @@ Neither installer is code signed. macOS: right-click > Open. Windows: More info 
 | Offset (ms) | -500 to 500; positive sends later | 0 | per machine |
 | Source | Auto, LTC only, DAW only | Auto | per project |
 | Coast (frames) | 0 to 150; 0 disables | 30 | per project |
+| Mute LTC | on, off; off passes both legs through | on | per project |
 
-Coast is a host parameter only. The offset stepper moves 1 ms, or one frame with Shift.
+Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The offset stepper moves 1 ms, or one frame with Shift.
 
 Per-machine settings: `~/Library/Application Support/CT LTC ArtNet/` or `%APPDATA%\CT LTC ArtNet\`.
 
@@ -59,6 +60,6 @@ Requires Xcode command line tools; for Windows targets `brew install mingw-w64 m
 
 ## Status
 
-macOS: 1.4.0 used in REAPER 7; 1.5.0 passes the test suite. Windows: compiles; not yet run.
+macOS: 1.4.0 used in REAPER 7; 1.6.0 passes the test suite. Windows: compiles; not yet run.
 
 LTC decoder ported from the Cockos JSFX "SMPTE LTC Reader/Meter". CLAP headers: `third_party/clap` (MIT).

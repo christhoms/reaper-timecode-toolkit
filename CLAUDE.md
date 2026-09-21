@@ -11,5 +11,5 @@ CLAP plugin, LTC or DAW time to Art-Net timecode. macOS (Cocoa) and Windows (Win
 - Windows runtime is unverified. First checks on a Windows machine: `test_core.exe CT_LTC_ArtNet.clap`, then the
   installer, then REAPER: window scale at 100/150/200 %, Return in both fields, stepper hold and Shift-click,
   Source segments, state reload, packets at the desk. Record results in README "Status".
-- State blob "CTLA" v3, 9 bytes. Parameter ids 1 Offset, 2 Source, 3 Coast: never renumber.
+- State blob "CTLA" v4, 10 bytes (v1-v3 still load). Parameter ids 1 Offset, 2 Source, 3 Coast, 4 Mute LTC: never renumber.
 - Commits: author Chris Thoms, no AI attribution.

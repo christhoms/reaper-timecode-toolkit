@@ -25,6 +25,7 @@ constexpr const char *portIn = "LTC in", *portOut = "Out";
 // window labels
 constexpr const char *artnetTo = "Art-Net to", *offset = "Offset", *source = "Source", *ms = "ms";
 constexpr const char *sourceNames[3] = {"Auto", "LTC only", "DAW only"};
+constexpr const char *muteLtc = "Mute LTC";
 
 // status line, joined with sep
 constexpr const char *sep = "  |  ";
@@ -33,7 +34,7 @@ inline const char *rate(int fps, bool is2997, bool df) {
   return fps == 30 ? (is2997 ? (df ? "29.97 DF" : "29.97") : "30") : fps == 25 ? "25" : "24";
 }
 inline std::string coast(int frames) { return "coast " + std::to_string(frames); }
-inline const char *muted(int channel) { return channel == 0 ? "LTC L muted" : "LTC R muted"; }
+inline const char *ltcLeg(int channel) { return channel == 0 ? "LTC L" : "LTC R"; }
 
 // faults
 constexpr const char *noLock = "no lock", *noDestination = "no destination", *sendFailed = "send failed";
@@ -41,8 +42,8 @@ constexpr const char *noLock = "no lock", *noDestination = "no destination", *se
 inline std::string offsetFrames(double frames) { char b[32]; std::snprintf(b, sizeof(b), "%+.2f fr", frames); return b; }
 
 // host parameters
-constexpr const char *paramOffset = "Offset (ms)", *paramSource = "Source", *paramCoast = "Coast (frames)";
-constexpr const char *coastOff = "off";
+constexpr const char *paramOffset = "Offset (ms)", *paramSource = "Source", *paramCoast = "Coast (frames)", *paramMute = "Mute LTC";
+constexpr const char *coastOff = "off", *on = "on", *off = "off";
 inline void offsetText(char *buf, unsigned size, double ms) { std::snprintf(buf, size, "%+.1f ms", ms); }
 inline void coastText(char *buf, unsigned size, int frames) { std::snprintf(buf, size, "%d", frames); }
 

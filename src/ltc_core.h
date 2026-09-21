@@ -262,9 +262,10 @@ class Router {
  public:
   void setSampleRate(double sr) { step_ = float(1.0 / (0.010 * sr)); }
   int latch() const { return latch_; }  // -1 = pass-through, 0 / 1 = channel that carries the LTC
+  void setMute(bool on) { mute_ = on; }  // off: both legs pass through; the LTC leg is still tracked
   void setLatch(int ch) {
     latch_ = ch < 0 ? -1 : (ch > 0 ? 1 : 0);
-    if (latch_ >= 0) { muteCh_ = latch_; gain_ = 1.0f; }  // restored state: muted from the first sample
+    if (latch_ >= 0) { muteCh_ = latch_; if (mute_) gain_ = 1.0f; }  // restored state: muted from the first sample
     notLtc_ = 0.0;
   }
 
@@ -289,7 +290,7 @@ class Router {
 
   // in-place safe: both inputs are read before anything is written
   void render(const float *in0, const float *in1, float *out0, float *out1, uint32_t n) {
-    const float target = latch_ >= 0 ? 1.0f : 0.0f;
+    const float target = latch_ >= 0 && mute_ ? 1.0f : 0.0f;
     for (uint32_t i = 0; i < n; i++) {
       const float a = in0 ? in0[i] : 0.0f, b = in1 ? in1[i] : 0.0f;
       if (gain_ < target) gain_ = std::min(target, gain_ + step_);
@@ -308,6 +309,7 @@ class Router {
 
  private:
   int latch_ = -1, muteCh_ = 0;
+  bool mute_ = true;
   float gain_ = 0.0f, step_ = 1.0f / 480.0f;
   double notLtc_ = 0.0;
 };

@@ -11,6 +11,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   NSStepper *_offStepper;
   double _offShown;
   NSSegmentedControl *_srcSeg;
+  NSSegmentedControl *_muteSeg;
   int _tickCount;
   NSTimer *_timer;
 }
@@ -68,6 +69,16 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   _srcSeg.selectedSegment = plug->mode.load();
   [self addSubview:_srcSeg];
 
+  _muteSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::muteLtc) ]
+                                               trackingMode:NSSegmentSwitchTrackingSelectAny
+                                                     target:self
+                                                     action:@selector(muteChanged:)];
+  _muteSeg.frame = NSMakeRect(kW - 12 - 92, kH - kBar + 72, 92, 24);
+  _muteSeg.controlSize = NSControlSizeSmall;
+  _muteSeg.font = [NSFont systemFontOfSize:11];
+  [_muteSeg setSelected:plug->muteLtc.load() != 0 forSegment:0];
+  [self addSubview:_muteSeg];
+
   _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
   [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
   return self;
@@ -87,9 +98,14 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   if (_plug) _plug->setModeFromGui((int)_srcSeg.selectedSegment);
 }
 
+- (void)muteChanged:(id)sender {
+  if (_plug) _plug->setMuteFromGui([_muteSeg isSelectedForSegment:0]);
+}
+
 - (void)tick:(NSTimer *)t {
   if (_plug) {  // follow changes made from the host (parameter slider, automation)
     if (_srcSeg.selectedSegment != _plug->mode.load()) _srcSeg.selectedSegment = _plug->mode.load();
+    if ([_muteSeg isSelectedForSegment:0] != (_plug->muteLtc.load() != 0)) [_muteSeg setSelected:_plug->muteLtc.load() != 0 forSegment:0];
     if ((_tickCount++ % 30) == 0) _plug->refreshProject();  // project frame rate / start offset, once a second
     const double v = _plug->sender.offsetMs();
     if (v != _offShown && _offField.currentEditor == nil) [self showOffset:v];

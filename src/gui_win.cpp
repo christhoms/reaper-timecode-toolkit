@@ -39,6 +39,7 @@ struct Gui {
 
 const double kBarY = kGuiH - kGuiBar;
 RECT seg_rect(const Gui &g, int i) { return g.rc(84 + i * 74, kBarY + 72, 73, 24); }
+RECT mute_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 72, 92, 24); }
 RECT step_rect(const Gui &g, int dir) { return g.rc(160, kBarY + (dir > 0 ? 39 : 51), 18, 12); }
 
 HINSTANCE module() {
@@ -137,6 +138,9 @@ void paint(Gui &g, HDC dc) {
     fill(dc, r, i == mode ? kSel : kField);
     text(dc, g.fUi, i == mode ? kText : kDim, S::sourceNames[i], r, DT_CENTER | DT_VCENTER);
   }
+  const bool mute = g.plug->muteLtc.load() != 0;
+  fill(dc, mute_rect(g), mute ? kSel : kField);
+  text(dc, g.fUi, mute ? kText : kDim, S::muteLtc, mute_rect(g), DT_CENTER | DT_VCENTER);
 }
 
 LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -174,6 +178,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       const POINT p{GET_X_LPARAM(l), GET_Y_LPARAM(l)};
       SetFocus(h);
       for (int i = 0; i < 3; i++) { const RECT r = seg_rect(*g, i); if (PtInRect(&r, p)) g->plug->setModeFromGui(i); }
+      { const RECT r = mute_rect(*g); if (PtInRect(&r, p)) g->plug->setMuteFromGui(g->plug->muteLtc.load() == 0); }
       for (int dir : {1, -1}) {
         const RECT r = step_rect(*g, dir);
         if (!PtInRect(&r, p)) continue;

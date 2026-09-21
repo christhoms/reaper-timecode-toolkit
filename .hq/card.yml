@@ -9,6 +9,6 @@ memory:
   - README.md
   - CLAUDE.md
 focus: >
-  1.5.0: Windows port and installers built on macOS; Windows runtime unverified. NEXT: run test_core.exe,
+  1.6.0: Windows port and installers built on macOS; Windows runtime unverified. NEXT: run test_core.exe,
   the installer and REAPER checks on Windows (list in CLAUDE.md), then publish the release.
 updated: 2026-09-21

@@ -75,7 +75,7 @@ void plug_reset(const clap_plugin_t *p) {
 }
 
 // ---- parameter: Offset (ms) --------------------------------------------------------------------------------------
-constexpr clap_id kParamOffset = 1, kParamSource = 2, kParamCoast = 3;
+constexpr clap_id kParamOffset = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4;
 
 // host -> plugin value events, and (after a GUI edit) plugin -> host
 void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_events_t *out) {
@@ -85,6 +85,7 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
     if (h->space_id != CLAP_CORE_EVENT_SPACE_ID || h->type != CLAP_EVENT_PARAM_VALUE) continue;
     const auto *ev = (const clap_event_param_value_t *)h;
     if (ev->param_id == kParamSource) { s->mode.store(std::min(2, std::max(0, int(std::lround(ev->value)))), std::memory_order_relaxed); continue; }
+    if (ev->param_id == kParamMute) { s->muteLtc.store(ev->value >= 0.5 ? 1 : 0, std::memory_order_relaxed); continue; }
     if (ev->param_id == kParamCoast) { s->coastLimit.store(ctltc::clamp_coast(ev->value), std::memory_order_relaxed); continue; }
     if (ev->param_id != kParamOffset) continue;
     s->sender.setOffsetMs(ev->value);
@@ -102,6 +103,17 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
     ev.value = s->sender.offsetMs();
     out->try_push(out, &ev.header);
   }
+  if (out && s->muteFromGui.exchange(false, std::memory_order_relaxed)) {
+    clap_event_param_value_t ev;
+    std::memset(&ev, 0, sizeof(ev));
+    ev.header.size = sizeof(ev);
+    ev.header.type = CLAP_EVENT_PARAM_VALUE;
+    ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    ev.param_id = kParamMute;
+    ev.note_id = -1; ev.port_index = -1; ev.channel = -1; ev.key = -1;
+    ev.value = s->muteLtc.load(std::memory_order_relaxed);
+    out->try_push(out, &ev.header);
+  }
   if (out && s->modeFromGui.exchange(false, std::memory_order_relaxed)) {
     clap_event_param_value_t ev;
     std::memset(&ev, 0, sizeof(ev));
@@ -115,7 +127,7 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
   }
 }
 
-uint32_t params_count(const clap_plugin_t *) { return 3; }
+uint32_t params_count(const clap_plugin_t *) { return 4; }
 bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *info) {
   if (index == 1) {
     std::memset(info, 0, sizeof(*info));
@@ -123,6 +135,14 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
     info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_ENUM | CLAP_PARAM_IS_AUTOMATABLE;
     std::snprintf(info->name, sizeof(info->name), "%s", S::paramSource);
     info->min_value = 0; info->max_value = 2; info->default_value = 0;
+    return true;
+  }
+  if (index == 3) {
+    std::memset(info, 0, sizeof(*info));
+    info->id = kParamMute;
+    info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
+    std::snprintf(info->name, sizeof(info->name), "%s", S::paramMute);
+    info->min_value = 0; info->max_value = 1; info->default_value = 1;
     return true;
   }
   if (index == 2) {
@@ -147,12 +167,14 @@ const auto &kSourceNames = S::sourceNames;
 bool params_get_value(const clap_plugin_t *p, clap_id id, double *v) {
   if (id == kParamSource) { *v = P(p)->mode.load(); return true; }
   if (id == kParamCoast) { *v = P(p)->coastLimit.load(); return true; }
+  if (id == kParamMute) { *v = P(p)->muteLtc.load(); return true; }
   if (id != kParamOffset) return false;
   *v = P(p)->sender.offsetMs();
   return true;
 }
 bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf, uint32_t size) {
   if (id == kParamSource) { std::snprintf(buf, size, "%s", kSourceNames[std::min(2, std::max(0, int(std::lround(v))))]); return true; }
+  if (id == kParamMute) { std::snprintf(buf, size, "%s", v >= 0.5 ? S::on : S::off); return true; }
   if (id == kParamCoast) {
     const int c = ctltc::clamp_coast(v);
     if (c == 0) std::snprintf(buf, size, "%s", S::coastOff);
@@ -169,6 +191,7 @@ bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, do
     *v = std::min(2, std::max(0, std::atoi(txt)));
     return true;
   }
+  if (id == kParamMute && txt) { *v = !std::strcmp(txt, S::on) || std::atof(txt) >= 0.5 ? 1 : 0; return true; }
   if (id == kParamCoast && txt) { *v = !std::strcmp(txt, S::coastOff) ? 0 : ctltc::clamp_coast(std::atof(txt)); return true; }
   if (id != kParamOffset || !txt) return false;
   *v = ctltc::clamp_offset(std::atof(txt));
@@ -184,6 +207,7 @@ clap_process_status plug_process(const clap_plugin_t *p, const clap_process_t *p
   clap_audio_buffer_t *out = pr->audio_outputs_count > 0 ? &pr->audio_outputs[0] : nullptr;
 
   param_events(s, pr->in_events, pr->out_events);
+  s->router.setMute(s->muteLtc.load(std::memory_order_relaxed) != 0);
   const int pending = s->loadLatch.exchange(-2, std::memory_order_relaxed);
   if (pending != -2) s->router.setLatch(pending);
   const int pendingK = s->loadKnowledge.exchange(-1, std::memory_order_relaxed);
@@ -328,14 +352,14 @@ const clap_plugin_gui_t kGui = {gui_is_api_supported, gui_get_preferred_api, gui
                                 gui_set_parent,       gui_set_transient,     gui_suggest_title, gui_show,       gui_hide};
 
 // state: only the one-sided latch, so a reloaded project mutes the LTC leg from the first sample
-// v2 = v1 + source mode + what the instance knows about LTC on its input (see SourceSelect); v3 = v2 + coast limit
+// v2 = v1 + source mode + what the instance knows about LTC on its input (see SourceSelect); v3 = v2 + coast limit; v4 = v3 + mute LTC
 bool state_save(const clap_plugin_t *p, const clap_ostream_t *st) {
-  const unsigned char b[9] = {'C', 'T', 'L', 'A', 3, (unsigned char)(P(p)->latchDisp.load() + 1), (unsigned char)P(p)->mode.load(),
-                              (unsigned char)P(p)->knowledgeDisp.load(), (unsigned char)P(p)->coastLimit.load()};
+  const unsigned char b[10] = {'C', 'T', 'L', 'A', 4, (unsigned char)(P(p)->latchDisp.load() + 1), (unsigned char)P(p)->mode.load(),
+                              (unsigned char)P(p)->knowledgeDisp.load(), (unsigned char)P(p)->coastLimit.load(), (unsigned char)P(p)->muteLtc.load()};
   return st->write(st, b, sizeof(b)) == (int64_t)sizeof(b);
 }
 bool state_load(const clap_plugin_t *p, const clap_istream_t *st) {
-  unsigned char b[9] = {0};
+  unsigned char b[10] = {0};
   int64_t got = 0;
   while (got < (int64_t)sizeof(b)) {
     const int64_t r = st->read(st, b + got, sizeof(b) - got);
@@ -343,8 +367,10 @@ bool state_load(const clap_plugin_t *p, const clap_istream_t *st) {
     got += r;
   }
   if (got < 6 || std::memcmp(b, "CTLA", 4) || b[5] > 2) return false;
-  const bool v2 = b[4] == 2 && got == 8, v3 = b[4] == 3 && got == 9 && b[8] <= ctltc::kCoastMax;
-  if (!(b[4] == 1 && got >= 6) && !((v2 || v3) && b[6] <= 2 && b[7] <= 2)) return false;
+  const bool v2 = b[4] == 2 && got == 8, v4 = b[4] == 4 && got == 10 && b[9] <= 1;
+  const bool v3 = (v4 || (b[4] == 3 && got == 9)) && b[8] <= ctltc::kCoastMax;
+  if ((b[4] == 4 && !v4) || (!(b[4] == 1 && got >= 6) && !((v2 || v3) && b[6] <= 2 && b[7] <= 2))) return false;
+  if (v4) P(p)->muteLtc.store(b[9], std::memory_order_relaxed);
   P(p)->loadLatch.store(int(b[5]) - 1, std::memory_order_relaxed);
   P(p)->latchDisp.store(int(b[5]) - 1, std::memory_order_relaxed);
   if (v3) P(p)->coastLimit.store(b[8], std::memory_order_relaxed);
