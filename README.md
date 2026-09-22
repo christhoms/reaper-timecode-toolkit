@@ -28,8 +28,9 @@ Neither installer is code signed. macOS: right-click > Open. Windows: More info 
 | Source | Auto, LTC only, DAW only | Auto | per project |
 | Coast (frames) | 0 to 150; 0 disables | 30 | per project |
 | Mute LTC | on, off; off passes both legs through | on | per project |
+| Exclusive | on, off | on | per project |
 
-Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The offset stepper moves 1 ms, or one frame with Shift.
+Exclusive: within one host process the instance that started last sends alone, and every other instance is silent until 2 s after it stops. Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The offset stepper moves 1 ms, or one frame with Shift.
 
 Per-machine settings: `~/Library/Application Support/CT LTC ArtNet/` or `%APPDATA%\CT LTC ArtNet\`.
 

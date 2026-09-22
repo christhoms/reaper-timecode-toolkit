@@ -455,9 +455,12 @@ inline void save_offset_ms(double ms) {
 // ---- Art-Net sender --------------------------------------------------------------------------------------
 // Sends frame k at E + k * duration, E = upper envelope of (observed time - k * duration). Hosts that render ahead
 // deliver frames early and in bursts; packets still leave evenly and never ahead of the decoder.
+//
+// Exclusive: one token per process. An exclusive sender takes it when it starts (the latest start wins) and gives it
+// back 2 s after its last frame; while the token is held, every other sender stays silent.
 class Sender {
  public:
-  Sender() {
+  Sender() : id_(nextId().fetch_add(1)) {
     net_init();
     sock_ = socket(AF_INET, SOCK_DGRAM, 0);
     int yes = 1;
@@ -466,6 +469,7 @@ class Sender {
   }
   ~Sender() {
     stop();
+    release();
     if (sock_ != kNoSocket) close_socket(sock_);
   }
 
@@ -476,6 +480,7 @@ class Sender {
   void stop() {
     if (!run_.exchange(false)) return;
     if (thread_.joinable()) thread_.join();
+    release();
   }
 
   bool setTarget(const std::string &ip) {  // UI thread
@@ -516,6 +521,14 @@ class Sender {
   uint64_t sent() const { return sent_.load(std::memory_order_relaxed); }
   bool failed() const { return failed_.load(std::memory_order_relaxed); }  // last packet was refused by the OS
 
+  void setExclusive(bool on) {
+    if (exclusive_.exchange(on, std::memory_order_relaxed) == on) return;
+    if (on) claim_.store(true, std::memory_order_relaxed);  // switching it on while running counts as a start
+    else release();
+  }
+  bool exclusive() const { return exclusive_.load(std::memory_order_relaxed); }
+  bool blocked() const { return blocked_.load(std::memory_order_relaxed); }  // another sender holds the token
+
   // positive: later. Negative: earlier, running ahead of the decoder by |offset| (overshoots by that at a stop).
   void setOffsetMs(double ms) { offsetMs_.store(clamp_offset(ms), std::memory_order_relaxed); }
   double offsetMs() const { return offsetMs_.load(std::memory_order_relaxed); }
@@ -524,7 +537,22 @@ class Sender {
   struct Obs { long count; double t, dur; int fps, type; bool df; };
   static constexpr uint32_t kRing = 512;
 
+  static std::atomic<uint64_t> &owner() { static std::atomic<uint64_t> o{0}; return o; }
+  static std::atomic<uint64_t> &nextId() { static std::atomic<uint64_t> n{1}; return n; }
+  static std::atomic<int> &contenders() { static std::atomic<int> n{0}; return n; }  // running exclusive senders
+  void contend(bool on) { if (contending_ != on) { contending_ = on; contenders().fetch_add(on ? 1 : -1); } }  // sender thread only
+  void release() { uint64_t me = id_; owner().compare_exchange_strong(me, 0); }
+  bool mayEmit() {
+    uint64_t o = owner().load(std::memory_order_relaxed);
+    if (o == 0 && exclusive()) owner().compare_exchange_strong(o, id_);  // the holder stopped: take over
+    o = owner().load(std::memory_order_relaxed);
+    return o == id_ || (o == 0 && contenders().load(std::memory_order_relaxed) == 0);
+  }
+
   void send(long count) {
+    const bool emit = mayEmit();
+    blocked_.store(!emit, std::memory_order_relaxed);
+    if (!emit) return;
     const Timecode tc = count_to_tc(count, fps_, df_);
     unsigned char p[19] = {'A', 'r', 't', '-', 'N', 'e', 't', 0, 0x00, 0x97, 0, 14, 0, 0,
                            (unsigned char)tc.f, (unsigned char)tc.s, (unsigned char)tc.m, (unsigned char)tc.h, (unsigned char)type_};
@@ -555,6 +583,7 @@ class Sender {
         const Obs &o = ring_[r];
         const long day = frames_per_day(o.fps, o.df);
         const bool continuous = active && o.fps == fps_ && o.df == df_ && o.count == (lastCount + 1) % day;
+        if (!active && exclusive()) owner().store(id_, std::memory_order_relaxed);  // a start takes the token
         if (!continuous) {  // start, relocate, rate change: re-anchor on this frame and send it right away
           fps_ = o.fps; df_ = o.df; dur_ = o.dur; type_ = o.type;
           n0 = o.count; nLast = o.count; kNext = o.count;
@@ -571,7 +600,9 @@ class Sender {
       }
       rd_.store(r, std::memory_order_release);
 
-      if (active && now - lastObsWall > 2.0) active = false;
+      if (active && claim_.exchange(false, std::memory_order_relaxed) && exclusive()) owner().store(id_, std::memory_order_relaxed);
+      if (active && now - lastObsWall > 2.0) { active = false; release(); blocked_.store(false, std::memory_order_relaxed); }
+      contend(active && exclusive());
 
       const double off = offsetMs_.load(std::memory_order_relaxed) * 1e-3;
       const long ahead = off < 0 ? long(std::ceil(-off / dur_)) : 0;  // frames we may run ahead of the decoder
@@ -603,6 +634,9 @@ class Sender {
   std::atomic<uint32_t> wr_{0}, rd_{0};
   std::atomic<uint64_t> sent_{0};
   std::atomic<bool> failed_{false};
+  const uint64_t id_;
+  std::atomic<bool> exclusive_{true}, claim_{false}, blocked_{false};
+  bool contending_ = false;
   std::atomic<double> offsetMs_{0.0};
   int fps_ = 30, type_ = 3;
   bool df_ = false;

@@ -42,6 +42,7 @@ struct Plugin {
   std::atomic<bool> modeFromGui{false};
   std::atomic<int> muteLtc{1};                 // parameter "Mute LTC"
   std::atomic<bool> muteFromGui{false};
+  std::atomic<bool> exclusiveFromGui{false};   // parameter "Exclusive": the value lives in the sender
   bool wasPlaying = false;
   // REAPER project settings, read on the main thread through REAPER's API (other hosts: 30 fps, no offset)
   double (*fnFrameRate)(void *, bool *) = nullptr;
@@ -62,6 +63,12 @@ struct Plugin {
   void setMuteFromGui(bool on) {
     muteLtc.store(on ? 1 : 0, std::memory_order_relaxed);
     muteFromGui.store(true, std::memory_order_relaxed);
+    if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
+  }
+
+  void setExclusiveFromGui(bool on) {
+    sender.setExclusive(on);
+    exclusiveFromGui.store(true, std::memory_order_relaxed);
     if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
   }
 
@@ -108,13 +115,15 @@ inline UiState ui_state(Plugin &s) {
   const bool coasting = locked && !daw && coasted >= 2;  // a single filled frame is usually confirmed by a late decode
   const bool df = (rate >> 8) & 1;
   std::snprintf(u.tc, sizeof(u.tc), "%02u:%02u:%02u%c%02u", (tc >> 24) & 0xff, (tc >> 16) & 0xff, (tc >> 8) & 0xff, df ? ';' : ':', tc & 0xff);
-  u.tcColor = daw ? kUiDaw : coasting ? kUiCoast : locked ? kUiLtc : kUiOff;
+  const bool blocked = locked && s.sender.blocked();  // nothing leaves: the timecode stays grey
+  u.tcColor = blocked ? kUiOff : daw ? kUiDaw : coasting ? kUiCoast : locked ? kUiLtc : kUiOff;
 
   auto add = [&](const std::string &item) { u.line += (u.line.empty() ? "" : S::sep) + item; };
   if (locked) {
     if (daw) add(S::dawTime);
     add(S::rate(rate & 0xff, (rate >> 9) & 1, df));
     if (coasting) add(S::coast(coasted));
+    if (blocked) { add(S::otherInstance); u.lineColor = kUiWarn; }
   } else if (s.signal.load() && s.mode.load() != ctltc::kSourceDawOnly) {
     add(S::noLock);
     u.lineColor = kUiWarn;

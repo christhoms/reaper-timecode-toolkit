@@ -12,6 +12,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   double _offShown;
   NSSegmentedControl *_srcSeg;
   NSSegmentedControl *_muteSeg;
+  NSSegmentedControl *_exclSeg;
   NSFont *_fTc, *_fUi;      // looked up once: a lookup that fails mid-session must not reach the draw path
   NSArray<NSColor *> *_colors;  // indexed by UiColor
   int _tickCount;
@@ -91,6 +92,16 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   [_muteSeg setSelected:plug->muteLtc.load() != 0 forSegment:0];
   [self addSubview:_muteSeg];
 
+  _exclSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::exclusive) ]
+                                               trackingMode:NSSegmentSwitchTrackingSelectAny
+                                                     target:self
+                                                     action:@selector(exclusiveChanged:)];
+  _exclSeg.frame = NSMakeRect(kW - 12 - 92, kH - kBar + 39, 92, 24);
+  _exclSeg.controlSize = NSControlSizeSmall;
+  _exclSeg.font = [NSFont systemFontOfSize:11];
+  [_exclSeg setSelected:plug->sender.exclusive() forSegment:0];
+  [self addSubview:_exclSeg];
+
   _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
   [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
   return self;
@@ -114,10 +125,15 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   if (_plug) _plug->setMuteFromGui([_muteSeg isSelectedForSegment:0]);
 }
 
+- (void)exclusiveChanged:(id)sender {
+  if (_plug) _plug->setExclusiveFromGui([_exclSeg isSelectedForSegment:0]);
+}
+
 - (void)tick:(NSTimer *)t {
   if (_plug) {  // follow changes made from the host (parameter slider, automation)
     if (_srcSeg.selectedSegment != _plug->mode.load()) _srcSeg.selectedSegment = _plug->mode.load();
     if ([_muteSeg isSelectedForSegment:0] != (_plug->muteLtc.load() != 0)) [_muteSeg setSelected:_plug->muteLtc.load() != 0 forSegment:0];
+    if ([_exclSeg isSelectedForSegment:0] != _plug->sender.exclusive()) [_exclSeg setSelected:_plug->sender.exclusive() forSegment:0];
     if ((_tickCount++ % 30) == 0) _plug->refreshProject();  // project frame rate / start offset, once a second
     const double v = _plug->sender.offsetMs();
     if (v != _offShown && _offField.currentEditor == nil) [self showOffset:v];

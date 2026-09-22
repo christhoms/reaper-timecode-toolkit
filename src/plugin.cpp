@@ -75,7 +75,7 @@ void plug_reset(const clap_plugin_t *p) {
 }
 
 // ---- parameter: Offset (ms) --------------------------------------------------------------------------------------
-constexpr clap_id kParamOffset = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4;
+constexpr clap_id kParamOffset = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4, kParamExclusive = 5;
 
 // host -> plugin value events, and (after a GUI edit) plugin -> host
 void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_events_t *out) {
@@ -86,48 +86,32 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
     const auto *ev = (const clap_event_param_value_t *)h;
     if (ev->param_id == kParamSource) { s->mode.store(std::min(2, std::max(0, int(std::lround(ev->value)))), std::memory_order_relaxed); continue; }
     if (ev->param_id == kParamMute) { s->muteLtc.store(ev->value >= 0.5 ? 1 : 0, std::memory_order_relaxed); continue; }
+    if (ev->param_id == kParamExclusive) { s->sender.setExclusive(ev->value >= 0.5); continue; }
     if (ev->param_id == kParamCoast) { s->coastLimit.store(ctltc::clamp_coast(ev->value), std::memory_order_relaxed); continue; }
     if (ev->param_id != kParamOffset) continue;
     s->sender.setOffsetMs(ev->value);
     s->offsetNeedsSave.store(true, std::memory_order_relaxed);
     if (s->host->request_callback) s->host->request_callback(s->host);
   }
-  if (out && s->offsetFromGui.exchange(false, std::memory_order_relaxed)) {
+  auto tell = [&](std::atomic<bool> &fromGui, clap_id id, double value) {  // a GUI edit -> the host
+    if (!out || !fromGui.exchange(false, std::memory_order_relaxed)) return;
     clap_event_param_value_t ev;
     std::memset(&ev, 0, sizeof(ev));
     ev.header.size = sizeof(ev);
     ev.header.type = CLAP_EVENT_PARAM_VALUE;
     ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-    ev.param_id = kParamOffset;
+    ev.param_id = id;
     ev.note_id = -1; ev.port_index = -1; ev.channel = -1; ev.key = -1;
-    ev.value = s->sender.offsetMs();
+    ev.value = value;
     out->try_push(out, &ev.header);
-  }
-  if (out && s->muteFromGui.exchange(false, std::memory_order_relaxed)) {
-    clap_event_param_value_t ev;
-    std::memset(&ev, 0, sizeof(ev));
-    ev.header.size = sizeof(ev);
-    ev.header.type = CLAP_EVENT_PARAM_VALUE;
-    ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-    ev.param_id = kParamMute;
-    ev.note_id = -1; ev.port_index = -1; ev.channel = -1; ev.key = -1;
-    ev.value = s->muteLtc.load(std::memory_order_relaxed);
-    out->try_push(out, &ev.header);
-  }
-  if (out && s->modeFromGui.exchange(false, std::memory_order_relaxed)) {
-    clap_event_param_value_t ev;
-    std::memset(&ev, 0, sizeof(ev));
-    ev.header.size = sizeof(ev);
-    ev.header.type = CLAP_EVENT_PARAM_VALUE;
-    ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-    ev.param_id = kParamSource;
-    ev.note_id = -1; ev.port_index = -1; ev.channel = -1; ev.key = -1;
-    ev.value = s->mode.load(std::memory_order_relaxed);
-    out->try_push(out, &ev.header);
-  }
+  };
+  tell(s->offsetFromGui, kParamOffset, s->sender.offsetMs());
+  tell(s->muteFromGui, kParamMute, s->muteLtc.load(std::memory_order_relaxed));
+  tell(s->modeFromGui, kParamSource, s->mode.load(std::memory_order_relaxed));
+  tell(s->exclusiveFromGui, kParamExclusive, s->sender.exclusive() ? 1 : 0);
 }
 
-uint32_t params_count(const clap_plugin_t *) { return 4; }
+uint32_t params_count(const clap_plugin_t *) { return 5; }
 bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *info) {
   if (index == 1) {
     std::memset(info, 0, sizeof(*info));
@@ -142,6 +126,14 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
     info->id = kParamMute;
     info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
     std::snprintf(info->name, sizeof(info->name), "%s", S::paramMute);
+    info->min_value = 0; info->max_value = 1; info->default_value = 1;
+    return true;
+  }
+  if (index == 4) {
+    std::memset(info, 0, sizeof(*info));
+    info->id = kParamExclusive;
+    info->flags = CLAP_PARAM_IS_STEPPED;  // not automatable: it arbitrates between instances
+    std::snprintf(info->name, sizeof(info->name), "%s", S::paramExclusive);
     info->min_value = 0; info->max_value = 1; info->default_value = 1;
     return true;
   }
@@ -168,13 +160,14 @@ bool params_get_value(const clap_plugin_t *p, clap_id id, double *v) {
   if (id == kParamSource) { *v = P(p)->mode.load(); return true; }
   if (id == kParamCoast) { *v = P(p)->coastLimit.load(); return true; }
   if (id == kParamMute) { *v = P(p)->muteLtc.load(); return true; }
+  if (id == kParamExclusive) { *v = P(p)->sender.exclusive() ? 1 : 0; return true; }
   if (id != kParamOffset) return false;
   *v = P(p)->sender.offsetMs();
   return true;
 }
 bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf, uint32_t size) {
   if (id == kParamSource) { std::snprintf(buf, size, "%s", kSourceNames[std::min(2, std::max(0, int(std::lround(v))))]); return true; }
-  if (id == kParamMute) { std::snprintf(buf, size, "%s", v >= 0.5 ? S::on : S::off); return true; }
+  if (id == kParamMute || id == kParamExclusive) { std::snprintf(buf, size, "%s", v >= 0.5 ? S::on : S::off); return true; }
   if (id == kParamCoast) {
     const int c = ctltc::clamp_coast(v);
     if (c == 0) std::snprintf(buf, size, "%s", S::coastOff);
@@ -191,7 +184,7 @@ bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, do
     *v = std::min(2, std::max(0, std::atoi(txt)));
     return true;
   }
-  if (id == kParamMute && txt) { *v = !std::strcmp(txt, S::on) || std::atof(txt) >= 0.5 ? 1 : 0; return true; }
+  if ((id == kParamMute || id == kParamExclusive) && txt) { *v = !std::strcmp(txt, S::on) || std::atof(txt) >= 0.5 ? 1 : 0; return true; }
   if (id == kParamCoast && txt) { *v = !std::strcmp(txt, S::coastOff) ? 0 : ctltc::clamp_coast(std::atof(txt)); return true; }
   if (id != kParamOffset || !txt) return false;
   *v = ctltc::clamp_offset(std::atof(txt));
@@ -352,24 +345,30 @@ const clap_plugin_gui_t kGui = {gui_is_api_supported, gui_get_preferred_api, gui
                                 gui_set_parent,       gui_set_transient,     gui_suggest_title, gui_show,       gui_hide};
 
 // state: only the one-sided latch, so a reloaded project mutes the LTC leg from the first sample
-// v2 = v1 + source mode + what the instance knows about LTC on its input (see SourceSelect); v3 = v2 + coast limit; v4 = v3 + mute LTC
+// v2 = v1 + source mode + what the instance knows about LTC on its input (see SourceSelect); v3 = v2 + coast limit; v4 = v3 + mute LTC;
+// v5 = v4 + exclusive
+constexpr int kStateSize[] = {0, 6, 8, 9, 10, 11};  // bytes per version
 bool state_save(const clap_plugin_t *p, const clap_ostream_t *st) {
-  const unsigned char b[10] = {'C', 'T', 'L', 'A', 4, (unsigned char)(P(p)->latchDisp.load() + 1), (unsigned char)P(p)->mode.load(),
-                              (unsigned char)P(p)->knowledgeDisp.load(), (unsigned char)P(p)->coastLimit.load(), (unsigned char)P(p)->muteLtc.load()};
+  const unsigned char b[11] = {'C', 'T', 'L', 'A', 5, (unsigned char)(P(p)->latchDisp.load() + 1), (unsigned char)P(p)->mode.load(),
+                              (unsigned char)P(p)->knowledgeDisp.load(), (unsigned char)P(p)->coastLimit.load(), (unsigned char)P(p)->muteLtc.load(),
+                              (unsigned char)(P(p)->sender.exclusive() ? 1 : 0)};
   return st->write(st, b, sizeof(b)) == (int64_t)sizeof(b);
 }
 bool state_load(const clap_plugin_t *p, const clap_istream_t *st) {
-  unsigned char b[10] = {0};
+  unsigned char b[11] = {0};
   int64_t got = 0;
   while (got < (int64_t)sizeof(b)) {
     const int64_t r = st->read(st, b + got, sizeof(b) - got);
     if (r <= 0) break;
     got += r;
   }
-  if (got < 6 || std::memcmp(b, "CTLA", 4) || b[5] > 2) return false;
-  const bool v2 = b[4] == 2 && got == 8, v4 = b[4] == 4 && got == 10 && b[9] <= 1;
-  const bool v3 = (v4 || (b[4] == 3 && got == 9)) && b[8] <= ctltc::kCoastMax;
-  if ((b[4] == 4 && !v4) || (!(b[4] == 1 && got >= 6) && !((v2 || v3) && b[6] <= 2 && b[7] <= 2))) return false;
+  const int ver = b[4];
+  if (got < 6 || std::memcmp(b, "CTLA", 4) || b[5] > 2 || ver < 1 || ver > 5) return false;
+  if (ver == 1 ? got < kStateSize[1] : got != kStateSize[ver]) return false;
+  const bool v2 = ver == 2, v3 = ver >= 3, v4 = ver >= 4, v5 = ver >= 5;
+  if (ver >= 2 && (b[6] > 2 || b[7] > 2)) return false;
+  if ((v3 && b[8] > ctltc::kCoastMax) || (v4 && b[9] > 1) || (v5 && b[10] > 1)) return false;
+  if (v5) P(p)->sender.setExclusive(b[10] != 0);
   if (v4) P(p)->muteLtc.store(b[9], std::memory_order_relaxed);
   P(p)->loadLatch.store(int(b[5]) - 1, std::memory_order_relaxed);
   P(p)->latchDisp.store(int(b[5]) - 1, std::memory_order_relaxed);

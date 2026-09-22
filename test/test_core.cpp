@@ -463,6 +463,37 @@ static void test_sender(Listener &L) {
     CHECK(hours1 >= 13 && hours5 >= 13 && backwards == 0, "relocate: %d at 01h, %d at 05h, %d stale", hours1, hours5, backwards);
     std::printf("  relocate: %d packets at 01:00, %d at 05:30, %d stale\n", hours1, hours5, backwards);
   }
+  {  // exclusive: the latest start sends alone; a sender with Exclusive off is silenced too; the token returns 2 s after a stop
+    L.clear();
+    Sender a, b, open;  // a at 01h, b at 02h, open (Exclusive off) at 03h
+    open.setExclusive(false);
+    for (Sender *s : {&a, &b, &open}) { s->setTarget("127.0.0.1"); s->start(); }
+    const double t0 = now_s();
+    const long ca = tc_to_count(1, 0, 0, 0, 30, false), cb = tc_to_count(2, 0, 0, 0, 30, false), co = tc_to_count(3, 0, 0, 0, 30, false);
+    auto put = [&](Sender &s, long c) { Timecode t = count_to_tc(c, 30, false); fr.h = t.h; fr.m = t.m; fr.s = t.s; fr.f = t.f; s.observe(fr, now_s()); };
+    // a and open run throughout; b runs from 0.5 s to 1.0 s
+    for (int k = 0; k < 120; k++) {
+      punctual_until(t0 + k * dur);
+      put(a, ca + k); put(open, co + k);
+      if (k >= 15 && k < 30) put(b, cb + k);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    for (Sender *s : {&a, &b, &open}) s->stop();
+    std::lock_guard<std::mutex> g(L.mu);
+    int n[4] = {0, 0, 0, 0}, mixed = 0; double lastB = 0, firstAAfterB = 0, firstB = 0;
+    for (auto &p : L.pk) {
+      const int h = p.second[17]; if (h < 1 || h > 3) continue;
+      n[h]++;
+      if (h == 2) { lastB = p.first; if (!firstB) firstB = p.first; }
+      if (h == 1 && lastB && !firstAAfterB) firstAAfterB = p.first;
+    }
+    for (auto &p : L.pk) if (p.second[17] != 2 && p.second[17] >= 1 && p.second[17] <= 3 && firstB && p.first > firstB + 0.005 && p.first < lastB - 0.005) mixed++;
+    std::printf("  exclusive: %d packets from the first, %d from the later start, %d from the one with Exclusive off; first resumes %.2f s after the later one stops\n",
+                n[1], n[2], n[3], firstAAfterB - lastB);
+    CHECK(n[2] >= 13 && mixed == 0, "exclusive: later start sends alone (%d packets, %d from others meanwhile)", n[2], mixed);
+    CHECK(n[3] == 0, "exclusive: the sender with Exclusive off stays silent (%d packets)", n[3]);
+    CHECK(firstAAfterB - lastB > 1.9 && firstAAfterB - lastB < 2.3, "exclusive: first sender resumes 2 s after the later one stops (%.2f s)", firstAAfterB - lastB);
+  }
 }
 
 // ---- the real plugin through its CLAP entry ------------------------------------------------------------------
@@ -547,7 +578,7 @@ static void test_plugin(const char *path, Listener &L) {
     static std::vector<unsigned char> blob; static size_t rpos; blob.clear(); rpos = 0;
     clap_ostream_t os{nullptr, [](const clap_ostream_t *, const void *d, uint64_t n) -> int64_t { blob.insert(blob.end(), (const unsigned char *)d, (const unsigned char *)d + n); return (int64_t)n; }};
     clap_istream_t is{nullptr, [](const clap_istream_t *, void *d, uint64_t n) -> int64_t { size_t k = std::min<size_t>(n, blob.size() - rpos); std::memcpy(d, blob.data() + rpos, k); rpos += k; return (int64_t)k; }};
-    CHECK(state && state->save(p, &os) && blob.size() == 10 && blob[4] == 4 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1, "state save (v4: latch right, auto, LTC seen, coast 30, mute on)");
+    CHECK(state && state->save(p, &os) && blob.size() == 11 && blob[4] == 5 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1 && blob[10] == 1, "state save (v5: latch right, auto, LTC seen, coast 30, mute on, exclusive on)");
     const clap_plugin_t *p2 = fac->create_plugin(fac, &host, desc->id);
     p2->init(p2); 
     auto *state2 = (const clap_plugin_state_t *)p2->get_extension(p2, CLAP_EXT_STATE);
@@ -562,7 +593,7 @@ static void test_plugin(const char *path, Listener &L) {
   {  // the Offset parameter through the CLAP interface
     auto *params = (const clap_plugin_params_t *)p->get_extension(p, CLAP_EXT_PARAMS);
     clap_param_info_t pi; double v = 99; char txt[64] = {0};
-    CHECK(params && params->count(p) == 4 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
+    CHECK(params && params->count(p) == 5 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
     CHECK(params->get_value(p, pi.id, &v) && v == 0.0, "params: default 0 (got %.2f)", v);
     static clap_event_param_value_t ev; std::memset(&ev, 0, sizeof(ev));
     ev.header.size = sizeof(ev); ev.header.type = CLAP_EVENT_PARAM_VALUE; ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID; ev.param_id = pi.id; ev.value = -37.5;
@@ -585,7 +616,7 @@ static void test_plugin(const char *path, Listener &L) {
       ((const clap_plugin_params_t *)pl->get_extension(pl, CLAP_EXT_PARAMS))->flush(pl, &ie, &oe);
     };
     clap_param_info_t pi2; char txt[64] = {0};
-    CHECK(params->count(p) == 4 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
+    CHECK(params->count(p) == 5 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
 
     // run 'seconds' of real-time blocks on plugin pl. ltcFrom/ltcTo: when the right leg carries LTC. pos0: playhead start
     auto run = [&](const clap_plugin_t *pl, double seconds, double pos0, double ltcFrom, double ltcTo, LtcGen *g) {
