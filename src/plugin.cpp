@@ -1,4 +1,4 @@
-// CT LTC to Art-Net Timecode: CLAP glue. GUI: gui_mac.mm / gui_win.cpp.
+// Reaper Timecode Toolkit: CLAP glue. GUI: gui_mac.mm / gui_win.cpp.
 #include "plugin.h"
 
 namespace {
@@ -7,13 +7,13 @@ const char *kFeatures[] = {CLAP_PLUGIN_FEATURE_UTILITY, CLAP_PLUGIN_FEATURE_ANAL
 
 const clap_plugin_descriptor_t kDesc = {
     CLAP_VERSION_INIT,
-    "uk.co.christhoms.ltc-artnet",
+    "uk.co.christhoms.reaper-timecode-toolkit",
     S::pluginName,
     S::vendor,
     "",
     "",
     "",
-    CTLTC_VERSION,
+    RTT_VERSION,
     S::pluginDescription,
     kFeatures,
 };

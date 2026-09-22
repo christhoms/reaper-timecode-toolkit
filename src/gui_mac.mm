@@ -4,7 +4,7 @@
 
 static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 
-@interface CTLTCView : NSView <NSTextFieldDelegate> {
+@interface RTTView : NSView <NSTextFieldDelegate> {
   Plugin *_plug;
   NSTextField *_ipField;
   NSPopUpButton *_ifPicker;
@@ -27,7 +27,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 - (void)shutdown;
 @end
 
-@implementation CTLTCView
+@implementation RTTView
 
 - (instancetype)initWithPlugin:(Plugin *)plug {
   self = [super initWithFrame:NSMakeRect(0, 0, kW, kH)];
@@ -335,7 +335,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     [self draw:S::source at:NSMakePoint(12, kH - kBar + 77) color:kUiDim rightAligned:NO];
     [self draw:u.latencyNote.c_str() at:NSMakePoint(248, kH - kBar + 43) color:kUiDim rightAligned:NO];
   } @catch (NSException *e) {
-    NSLog(@"CT LTC ArtNet: draw failed: %@", e);
+    NSLog(@"Reaper Timecode Toolkit: draw failed: %@", e);
   }
 }
 
@@ -344,22 +344,22 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 
 const char *gui_api() { return CLAP_WINDOW_API_COCOA; }
 bool gui_make(Plugin *s) {
-  if (!s->view) s->view = (__bridge_retained void *)[[CTLTCView alloc] initWithPlugin:s];
+  if (!s->view) s->view = (__bridge_retained void *)[[RTTView alloc] initWithPlugin:s];
   return s->view != nullptr;
 }
 void gui_free(Plugin *s) {
   if (!s->view) return;
-  CTLTCView *v = (__bridge_transfer CTLTCView *)s->view;
+  RTTView *v = (__bridge_transfer RTTView *)s->view;
   s->view = nullptr;
   [v shutdown];
 }
 bool gui_parent(Plugin *s, const clap_window_t *win) {
   if (!s->view || !win || !win->cocoa) return false;
-  CTLTCView *v = (__bridge CTLTCView *)s->view;
+  RTTView *v = (__bridge RTTView *)s->view;
   [v setFrame:NSMakeRect(0, 0, kW, kH)];
   [(__bridge NSView *)win->cocoa addSubview:v];
   return true;
 }
 void gui_visible(Plugin *s, bool on) {
-  if (s->view) [(__bridge CTLTCView *)s->view setHidden:!on];
+  if (s->view) [(__bridge RTTView *)s->view setHidden:!on];
 }

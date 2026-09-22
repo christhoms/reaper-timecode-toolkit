@@ -1,14 +1,15 @@
 # .hq/card.yml, read by the hq harvester. Keep it short; deep memory stays in the repo's own docs.
-name: ltc-artnet
-title: CT LTC to Art-Net Timecode
+name: reaper-timecode-toolkit
+title: Reaper Timecode Toolkit
 domain: showtools
 status: active
 purpose: >
-  CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode, one destination IP. macOS and Windows.
+  CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode, unicast or broadcast. macOS and Windows.
 memory:
   - README.md
   - CLAUDE.md
 focus: >
-  1.6.1: Windows port and installers built on macOS; Windows runtime unverified. NEXT: run test_core.exe,
-  the installer and REAPER checks on Windows (docs/WINDOWS-TEST.md), then publish the release.
+  2.0.0 on branch next (renamed from ltc-artnet): Exclusive, Latency (ms|fr), Offset, Broadcast; Windows verified
+  live in REAPER 7.78, macOS GUI changes need a Mac build + gui_test pass before merge. 1.6.1 Windows verification
+  on main (docs/WINDOWS-TEST.md). NEXT: Mac build, publish 2.0.0, rename the GitHub repo.
 updated: 2026-09-21

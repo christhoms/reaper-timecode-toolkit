@@ -97,7 +97,7 @@ inline void make_thread_realtime(double) {
 }
 inline std::string prefs_path() {
   const char *base = std::getenv("APPDATA");
-  return std::string(base ? base : ".") + "\\CT LTC ArtNet";
+  return std::string(base ? base : ".") + "\\Reaper Timecode Toolkit";
 }
 inline void make_dir(const std::string &p) { _mkdir(p.c_str()); }
 constexpr const char *kSep = "\\";
@@ -144,7 +144,7 @@ inline void make_thread_realtime(double period_s) {
 }
 inline std::string prefs_path() {
   const char *home = std::getenv("HOME");
-  return std::string(home ? home : "/tmp") + "/Library/Application Support/CT LTC ArtNet";
+  return std::string(home ? home : "/tmp") + "/Library/Application Support/Reaper Timecode Toolkit";
 }
 inline void make_dir(const std::string &p) { mkdir(p.c_str(), 0755); }
 constexpr const char *kSep = "/";

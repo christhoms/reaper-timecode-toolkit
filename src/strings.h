@@ -17,8 +17,8 @@
 
 namespace S {
 
-constexpr const char *pluginName = "CT LTC to Art-Net Timecode";
-constexpr const char *pluginDescription = "SMPTE LTC to Art-Net timecode";
+constexpr const char *pluginName = "Reaper Timecode Toolkit";
+constexpr const char *pluginDescription = "SMPTE LTC or DAW time to Art-Net timecode";
 constexpr const char *vendor = "Chris Thoms";
 constexpr const char *portIn = "LTC in", *portOut = "Out";
 

@@ -5,16 +5,16 @@ GCC 16.2, static). Record results at the bottom of this file and in README "Stat
 
 ## Get the binaries
 
-    gh release download v1.6.1 -R christhoms/ltc-artnet -D dist
+    gh release download v1.6.1 -R christhoms/reaper-timecode-toolkit -D dist
 
-The release is a draft: `gh` must be logged in as christhoms. Files: `CT-LTC-ArtNet-1.6.1-win64-setup.exe`,
+The release is a draft: `gh` must be logged in as christhoms. Files: `ReaperTimecodeToolkit-1.6.1-win64-setup.exe`,
 `test_core-1.6.1-win64.exe`.
 
 ## 1. Tests
 
 Extract the plugin without installing (7-Zip opens the NSIS setup), or install first and point at the installed file:
 
-    dist\test_core-1.6.1-win64.exe "C:\Program Files\Common Files\CLAP\CT_LTC_ArtNet.clap"
+    dist\test_core-1.6.1-win64.exe "C:\Program Files\Common Files\CLAP\ReaperTimecodeToolkit.clap"
 
 Pass: last line `all checks passed`. The run binds UDP 127.0.0.1:16454 and never touches the saved preferences.
 Sender and DAW-time timing checks fail at random on a loaded machine: rerun twice before treating one as a bug.
@@ -24,13 +24,13 @@ Expect the Windows timer to be the weak point (`wait_until_s` in `src/platform.h
 ## 2. Installer
 
 - Run the setup. Expect SmartScreen (unsigned): More info > Run anyway.
-- Check `C:\Program Files\Common Files\CLAP\CT_LTC_ArtNet.clap` exists and Apps > Installed apps lists
-  "CT LTC to Art-Net Timecode".
+- Check `C:\Program Files\Common Files\CLAP\ReaperTimecodeToolkit.clap` exists and Apps > Installed apps lists
+  "Reaper Timecode Toolkit".
 - Uninstall, check both are gone. Reinstall for step 3.
 
 ## 3. REAPER
 
-Preferences > Plug-ins > CLAP > Re-scan. Add "CT LTC to Art-Net Timecode" to a track with a "Track L - LTC R" file.
+Preferences > Plug-ins > CLAP > Re-scan. Add "Reaper Timecode Toolkit" to a track with a "Track L - LTC R" file.
 On that track: Track performance options > Prevent anticipative FX.
 
 | Check | Expect |
@@ -44,7 +44,7 @@ On that track: Track performance options > Prevent anticipative FX.
 | Space bar with a field focused | types into the field, does not start REAPER's transport |
 | Packets | Wireshark `udp.port == 6454`: one ArtTimeCode per frame, even spacing; or a grandMA3 timecode slot follows |
 | Save, close, reopen project | Source, Coast, Mute LTC restored; LTC leg muted from the first block |
-| `%APPDATA%\CT LTC ArtNet\` | `destination.txt`, `latency_ms.txt`, `latency_unit.txt` written |
+| `%APPDATA%\Reaper Timecode Toolkit\` | `destination.txt`, `latency_ms.txt`, `latency_unit.txt` written |
 | Remove the FX, close REAPER | no hang, no crash |
 
 Known risks to look at first: keyboard focus inside REAPER's FX window (`edit_proc` in `src/gui_win.cpp`), DPI
@@ -100,7 +100,7 @@ Machine: Ryzen X3D, 4K display at 150 %, REAPER on WaveOut 192 kHz / 1024 spls. 
 | Space bar with a field focused | pass: types a space, transport stays stopped; with no field focused it starts playback |
 | Packets | pass, UDP listener on 127.0.0.1:6454 in place of Wireshark: 2698 packets over the 90 s file, one per frame, none skipped or repeated, type 3, mean 33.34 ms, worst deviation 2.2 ms before the offset was changed |
 | Save, close, reopen | pass: Source LTC only, Coast 45, Mute LTC off, IP and offset restored. With Mute LTC on, a cold-load offline render has right = left from sample 0 |
-| `%APPDATA%\CT LTC ArtNet\` | pass: `destination.txt` 127.0.0.1, `offset_ms.txt` 30.83 |
+| `%APPDATA%\Reaper Timecode Toolkit\` | pass: `destination.txt` 127.0.0.1, `offset_ms.txt` 30.83 |
 | Remove the FX while playing with its window open, close REAPER | pass: no hang, no crash event |
 
 Not tested: grandMA3 following, display scale 100 % and 200 %, `AvSetMmThreadCharacteristics` result.

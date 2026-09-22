@@ -1,4 +1,4 @@
-// Tests for CT LTC to Art-Net: timecode maths, LTC decoding (synthetic LTC at 24 / 25 / 29.97 DF / 30), the
+// Tests for Reaper Timecode Toolkit: timecode maths, LTC decoding (synthetic LTC at 24 / 25 / 29.97 DF / 30), the
 // Art-Net sender's packet content + timing, and the built .clap loaded through its real entry point.
 //   ./test_core [path to the plugin binary]
 #ifndef _WIN32

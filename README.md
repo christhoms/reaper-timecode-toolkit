@@ -1,4 +1,4 @@
-# CT LTC to Art-Net Timecode
+# Reaper Timecode Toolkit
 
 CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode (ArtTimeCode, UDP 6454), to one address or broadcast on one interface.
 
@@ -15,8 +15,8 @@ Installers: Releases.
 
 | Platform | Installer | Plugin path |
 |---|---|---|
-| macOS 11+, universal | `CT-LTC-ArtNet-<version>-mac.pkg` | `/Library/Audio/Plug-Ins/CLAP/CT_LTC_ArtNet.clap` |
-| Windows 10+ x64 | `CT-LTC-ArtNet-<version>-win64-setup.exe` | `C:\Program Files\Common Files\CLAP\CT_LTC_ArtNet.clap` |
+| macOS 11+, universal | `ReaperTimecodeToolkit-<version>-mac.pkg` | `/Library/Audio/Plug-Ins/CLAP/ReaperTimecodeToolkit.clap` |
+| Windows 10+ x64 | `ReaperTimecodeToolkit-<version>-win64-setup.exe` | `C:\Program Files\Common Files\CLAP\ReaperTimecodeToolkit.clap` |
 
 Neither installer is code signed. macOS: right-click > Open. Windows: More info > Run anyway.
 
@@ -34,7 +34,7 @@ Neither installer is code signed. macOS: right-click > Open. Windows: More info 
 
 Exclusive: within one host process the instance that started last sends alone, and every other instance is silent until 2 s after it stops. Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The Latency field shows ms or frames (ms | fr); the stepper moves one of the shown unit, or one of the other with Shift.
 
-Per-machine settings: `~/Library/Application Support/CT LTC ArtNet/` or `%APPDATA%\CT LTC ArtNet\`.
+Per-machine settings: `~/Library/Application Support/Reaper Timecode Toolkit/` or `%APPDATA%\Reaper Timecode Toolkit\`.
 
 ## Behaviour
 
@@ -58,11 +58,11 @@ Track performance options > Prevent anticipative FX.
 Requires Xcode command line tools; for Windows targets `brew install mingw-w64 makensis`.
 
     build/mac/test_core <plugin binary>
-    test_core.exe CT_LTC_ArtNet.clap
+    test_core.exe ReaperTimecodeToolkit.clap
     ffmpeg -v error -i <file> -af "pan=mono|c0=c1" -f f32le -ar 48000 - | build/mac/ltc_file_check 48000 30
 
 ## Status
 
-macOS: 1.4.0 used in REAPER 7; 1.6.1 passes the test suite. Windows: 1.6.1 passes the test suite and a first REAPER 7 pass on Windows 11 (`docs/WINDOWS-TEST.md`).
+2.0.0 (renamed from CT LTC to Art-Net Timecode 1.6.1; new CLAP id, so projects saved with 1.x show the plugin as missing). Windows: passes the test suite, Exclusive / Latency / Offset / Broadcast checked live in REAPER 7.78. macOS: not yet built at 2.0.0.
 
 LTC decoder ported from the Cockos JSFX "SMPTE LTC Reader/Meter". CLAP headers: `third_party/clap` (MIT).

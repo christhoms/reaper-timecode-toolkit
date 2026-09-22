@@ -265,7 +265,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
   return DefWindowProcW(h, m, w, l);
 }
 
-const wchar_t *kClass = L"CTLTCArtNetView";
+const wchar_t *kClass = L"RTTView";
 
 HFONT font(const wchar_t *face, int px, int weight) {
   return CreateFontW(-px, 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);

@@ -1,4 +1,4 @@
-# ltc-artnet
+# reaper-timecode-toolkit
 
 CLAP plugin, LTC or DAW time to Art-Net timecode. macOS (Cocoa) and Windows (Win32/GDI).
 
