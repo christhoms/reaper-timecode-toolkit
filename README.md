@@ -7,6 +7,7 @@ CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode (ArtTimeCode, UDP 6454), 
 - Send the host playhead when the input carries no LTC
 - Mute a one-sided LTC leg and route the programme leg to both outputs
 - Latency: move the output by -500 to +500 ms, shown in ms or frames
+- Offset: add a timecode to every frame sent (00:00:00:00 in the DAW sends as 05:20:00:00)
 
 Installers: Releases.
 
@@ -29,6 +30,7 @@ Neither installer is code signed. macOS: right-click > Open. Windows: More info 
 | Coast (frames) | 0 to 150; 0 disables | 30 | per project |
 | Mute LTC | on, off; off passes both legs through | on | per project |
 | Exclusive | on, off | on | per project |
+| Offset | on, off; the timecode (HH:MM:SS:FF) is project state, not a parameter | off | per project |
 
 Exclusive: within one host process the instance that started last sends alone, and every other instance is silent until 2 s after it stops. Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The Latency field shows ms or frames (ms | fr); the stepper moves one of the shown unit, or one of the other with Shift.
 

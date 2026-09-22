@@ -35,7 +35,7 @@ On that track: Track performance options > Prevent anticipative FX.
 
 | Check | Expect |
 |---|---|
-| Window at 100 / 150 / 200 % display scale | 440x238 scaled, nothing clipped, text sharp |
+| Window at 100 / 150 / 200 % display scale | 440x271 scaled, nothing clipped, text sharp |
 | Play | green timecode, status `30 \| LTC R` (rate per file), right output carries the left leg |
 | Mute LTC off | both legs pass through; on again: LTC muted within 10 ms |
 | IP field: type address, Return | accepted, focus leaves the field; invalid address turns red |

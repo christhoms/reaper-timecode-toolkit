@@ -524,8 +524,23 @@ class Sender {
               fr.duration(), t);
   }
 
+  // timecode offset, added to every frame sent (h:m:s:f, wraps at 24 h); off by default
+  void setOffset(int h, int m, int s, int f, bool on) {
+    offset_.store((on ? 1u << 31 : 0u) | (uint32_t(h & 0x7f) << 24) | (uint32_t(m & 0xff) << 16) | (uint32_t(s & 0xff) << 8) | uint32_t(f & 0xff),
+                  std::memory_order_relaxed);
+  }
+  bool offsetOn() const { return offset_.load(std::memory_order_relaxed) >> 31; }
+  Timecode offset() const { const uint32_t o = offset_.load(std::memory_order_relaxed); return {int(o >> 24) & 0x7f, int(o >> 16) & 0xff, int(o >> 8) & 0xff, int(o & 0xff)}; }
+  long withOffset(long count, int fps, bool df) const {  // the frame count that leaves for 'count'
+    const uint32_t o = offset_.load(std::memory_order_relaxed);
+    if (!(o >> 31)) return count;
+    const Timecode t = {int(o >> 24) & 0x7f, int(o >> 16) & 0xff, int(o >> 8) & 0xff, int(o & 0xff)};
+    return (count + tc_to_count(t.h, t.m, t.s, std::min(t.f, fps - 1), fps, df)) % frames_per_day(fps, df);
+  }
+
   // any source: frame 'count' starts at wall-clock time t and lasts 'dur' seconds
   void observeAt(long count, int fps, bool df, int type, double dur, double t) {
+    count = withOffset(count, fps, df);
     const uint32_t w = wr_.load(std::memory_order_relaxed);
     const uint32_t next = (w + 1) % kRing;
     if (next == rd_.load(std::memory_order_acquire)) return;  // full: drop
@@ -659,6 +674,7 @@ class Sender {
   std::atomic<bool> exclusive_{true}, claim_{false}, blocked_{false};
   bool contending_ = false;
   std::atomic<double> latencyMs_{0.0};
+  std::atomic<uint32_t> offset_{0};  // on<<31 | h<<24 | m<<16 | s<<8 | f
   int fps_ = 30, type_ = 3;
   bool df_ = false;
   double dur_ = 1.0 / 30.0;

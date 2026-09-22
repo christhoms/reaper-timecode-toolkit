@@ -14,6 +14,8 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   NSSegmentedControl *_srcSeg;
   NSSegmentedControl *_muteSeg;
   NSSegmentedControl *_exclSeg;
+  NSTextField *_offsetField;
+  NSSegmentedControl *_offsetSeg;
   NSFont *_fTc, *_fUi;      // looked up once: a lookup that fails mid-session must not reach the draw path
   NSArray<NSColor *> *_colors;  // indexed by UiColor
   int _tickCount;
@@ -112,6 +114,27 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   [_exclSeg setSelected:plug->sender.exclusive() forSegment:0];
   [self addSubview:_exclSeg];
 
+  // offset row: a timecode added to every frame sent, applied while the button is lit
+  _offsetField = [[NSTextField alloc] initWithFrame:NSMakeRect(86, kH - kBar + 106, 108, 22)];
+  _offsetField.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
+  _offsetField.bezelStyle = NSTextFieldRoundedBezel;
+  _offsetField.focusRingType = NSFocusRingTypeNone;
+  _offsetField.stringValue = @(plug->offsetText().c_str());
+  _offsetField.target = self;
+  _offsetField.action = @selector(offsetEntered:);
+  _offsetField.delegate = self;
+  [self addSubview:_offsetField];
+  _offsetSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::offset) ]
+                                                 trackingMode:NSSegmentSwitchTrackingSelectAny
+                                                       target:self
+                                                       action:@selector(offsetChanged:)];
+  _offsetSeg.frame = NSMakeRect(kW - 12 - 92, kH - kBar + 105, 92, 24);
+  _offsetSeg.controlSize = NSControlSizeSmall;
+  _offsetSeg.font = [NSFont systemFontOfSize:11];
+  [_offsetSeg setSelected:plug->sender.offsetOn() forSegment:0];
+  [self addSubview:_offsetSeg];
+  [self showOffsetState];
+
   _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
   [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
   return self;
@@ -141,6 +164,31 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   [self showLatency];
 }
 
+- (void)showOffsetState {  // dim while the offset is off
+  if (!_plug) return;
+  const BOOL on = _plug->sender.offsetOn();
+  if ([_offsetSeg isSelectedForSegment:0] != on) [_offsetSeg setSelected:on forSegment:0];
+  if (_offsetField.currentEditor == nil) {
+    _offsetField.textColor = on ? [NSColor controlTextColor] : [NSColor secondaryLabelColor];
+    NSString *t = @(_plug->offsetText().c_str());
+    if (![_offsetField.stringValue isEqualToString:t]) _offsetField.stringValue = t;
+  }
+}
+
+- (void)offsetChanged:(id)sender {
+  if (_plug) _plug->setOffsetFromGui([_offsetSeg isSelectedForSegment:0]);
+}
+
+- (void)offsetEntered:(id)sender {
+  if (!_plug) return;
+  if (_plug->setOffsetTextFromGui(std::string(_offsetField.stringValue.UTF8String ?: ""))) {
+    [self showOffsetState];
+    [self.window makeFirstResponder:self];
+  } else {
+    _offsetField.textColor = [NSColor systemRedColor];
+  }
+}
+
 - (void)exclusiveChanged:(id)sender {
   if (_plug) _plug->setExclusiveFromGui([_exclSeg isSelectedForSegment:0]);
 }
@@ -150,6 +198,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     if (_srcSeg.selectedSegment != _plug->mode.load()) _srcSeg.selectedSegment = _plug->mode.load();
     if ([_muteSeg isSelectedForSegment:0] != (_plug->muteLtc.load() != 0)) [_muteSeg setSelected:_plug->muteLtc.load() != 0 forSegment:0];
     if ([_exclSeg isSelectedForSegment:0] != _plug->sender.exclusive()) [_exclSeg setSelected:_plug->sender.exclusive() forSegment:0];
+    [self showOffsetState];
     if ((_tickCount++ % 30) == 0) _plug->refreshProject();  // project frame rate / start offset, once a second
     if (_plug->latencyShown() != _latShown && _latField.currentEditor == nil) [self showLatency];
   }
@@ -190,7 +239,10 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   }
 }
 
-- (void)controlTextDidChange:(NSNotification *)n { _ipField.textColor = [NSColor controlTextColor]; }
+- (void)controlTextDidChange:(NSNotification *)n {
+  if (n.object == _ipField) _ipField.textColor = [NSColor controlTextColor];
+  if (n.object == _offsetField) _offsetField.textColor = [NSColor controlTextColor];
+}
 
 - (BOOL)acceptsFirstResponder { return YES; }
 

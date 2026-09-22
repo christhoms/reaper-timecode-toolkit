@@ -463,6 +463,21 @@ static void test_sender(Listener &L) {
     CHECK(hours1 >= 13 && hours5 >= 13 && backwards == 0, "relocate: %d at 01h, %d at 05h, %d stale", hours1, hours5, backwards);
     std::printf("  relocate: %d packets at 01:00, %d at 05:30, %d stale\n", hours1, hours5, backwards);
   }
+  {  // timecode offset: 00:00:10:00 + 05:20:00:00 leaves as 05:20:10:00; the day wraps; off = untouched; DF adds at the drop-frame count
+    Sender s; s.setTarget("127.0.0.1");
+    const long ten = tc_to_count(0, 0, 10, 0, 30, false);
+    s.setOffset(5, 20, 0, 0, true);
+    Timecode t = count_to_tc(s.withOffset(ten, 30, false), 30, false);
+    CHECK(t.h == 5 && t.m == 20 && t.s == 10 && t.f == 0, "offset 05:20:00:00 on 00:00:10:00 -> %02d:%02d:%02d:%02d", t.h, t.m, t.s, t.f);
+    t = count_to_tc(s.withOffset(tc_to_count(23, 0, 0, 0, 25, false), 25, false), 25, false);
+    CHECK(t.h == 4 && t.m == 20 && t.s == 0 && t.f == 0, "offset wraps the day at 25 fps -> %02d:%02d:%02d:%02d", t.h, t.m, t.s, t.f);
+    t = count_to_tc(s.withOffset(0, 30, true), 30, true);
+    CHECK(t.h == 5 && t.m == 20 && t.s == 0 && t.f == 0, "offset on DF 00:00:00;00 -> %02d:%02d:%02d;%02d", t.h, t.m, t.s, t.f);
+    s.setOffset(5, 20, 0, 0, false);
+    CHECK(s.withOffset(ten, 30, false) == ten && s.offset().h == 5 && s.offset().m == 20, "offset off: frames pass unchanged, the timecode is kept");
+    s.setOffset(0, 0, 0, 29, true);
+    CHECK(count_to_tc(s.withOffset(0, 24, false), 24, false).f == 23, "offset frames clamp to the running rate (29 -> 23 at 24 fps)");
+  }
   {  // exclusive: the latest start sends alone; a sender with Exclusive off is silenced too; the token returns 2 s after a stop
     L.clear();
     Sender a, b, open;  // a at 01h, b at 02h, open (Exclusive off) at 03h
@@ -578,7 +593,7 @@ static void test_plugin(const char *path, Listener &L) {
     static std::vector<unsigned char> blob; static size_t rpos; blob.clear(); rpos = 0;
     clap_ostream_t os{nullptr, [](const clap_ostream_t *, const void *d, uint64_t n) -> int64_t { blob.insert(blob.end(), (const unsigned char *)d, (const unsigned char *)d + n); return (int64_t)n; }};
     clap_istream_t is{nullptr, [](const clap_istream_t *, void *d, uint64_t n) -> int64_t { size_t k = std::min<size_t>(n, blob.size() - rpos); std::memcpy(d, blob.data() + rpos, k); rpos += k; return (int64_t)k; }};
-    CHECK(state && state->save(p, &os) && blob.size() == 11 && blob[4] == 5 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1 && blob[10] == 1, "state save (v5: latch right, auto, LTC seen, coast 30, mute on, exclusive on)");
+    CHECK(state && state->save(p, &os) && blob.size() == 16 && blob[4] == 6 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1 && blob[10] == 1 && blob[11] == 0, "state save (v6: latch right, auto, LTC seen, coast 30, mute on, exclusive on, offset off)");
     const clap_plugin_t *p2 = fac->create_plugin(fac, &host, desc->id);
     p2->init(p2); 
     auto *state2 = (const clap_plugin_state_t *)p2->get_extension(p2, CLAP_EXT_STATE);
@@ -593,7 +608,7 @@ static void test_plugin(const char *path, Listener &L) {
   {  // the Offset parameter through the CLAP interface
     auto *params = (const clap_plugin_params_t *)p->get_extension(p, CLAP_EXT_PARAMS);
     clap_param_info_t pi; double v = 99; char txt[64] = {0};
-    CHECK(params && params->count(p) == 5 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
+    CHECK(params && params->count(p) == 6 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
     CHECK(params->get_value(p, pi.id, &v) && v == 0.0, "params: default 0 (got %.2f)", v);
     static clap_event_param_value_t ev; std::memset(&ev, 0, sizeof(ev));
     ev.header.size = sizeof(ev); ev.header.type = CLAP_EVENT_PARAM_VALUE; ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID; ev.param_id = pi.id; ev.value = -37.5;
@@ -616,7 +631,7 @@ static void test_plugin(const char *path, Listener &L) {
       ((const clap_plugin_params_t *)pl->get_extension(pl, CLAP_EXT_PARAMS))->flush(pl, &ie, &oe);
     };
     clap_param_info_t pi2; char txt[64] = {0};
-    CHECK(params->count(p) == 5 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
+    CHECK(params->count(p) == 6 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
 
     // run 'seconds' of real-time blocks on plugin pl. ltcFrom/ltcTo: when the right leg carries LTC. pos0: playhead start
     auto run = [&](const clap_plugin_t *pl, double seconds, double pos0, double ltcFrom, double ltcTo, LtcGen *g) {

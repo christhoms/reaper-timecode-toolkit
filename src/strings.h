@@ -26,7 +26,8 @@ constexpr const char *portIn = "LTC in", *portOut = "Out";
 constexpr const char *artnetTo = "Art-Net to", *latency = "Latency", *source = "Source";
 constexpr const char *latencyUnits[2] = {"ms", "fr"};
 constexpr const char *sourceNames[3] = {"Auto", "LTC only", "DAW only"};
-constexpr const char *muteLtc = "Mute LTC", *exclusive = "Exclusive";
+constexpr const char *muteLtc = "Mute LTC", *exclusive = "Exclusive", *offset = "Offset";
+constexpr const char *offsetZero = "00:00:00:00";
 
 // status line, joined with sep
 constexpr const char *sep = "  |  ";
@@ -47,7 +48,7 @@ inline std::string latencyMs(double ms) { char b[32]; std::snprintf(b, sizeof(b)
 
 // host parameters
 constexpr const char *paramLatency = "Latency (ms)", *paramSource = "Source", *paramCoast = "Coast (frames)", *paramMute = "Mute LTC";
-constexpr const char *paramExclusive = "Exclusive";
+constexpr const char *paramExclusive = "Exclusive", *paramOffset = "Offset";
 constexpr const char *coastOff = "off", *on = "on", *off = "off";
 inline void latencyText(char *buf, unsigned size, double ms) { std::snprintf(buf, size, "%+.1f ms", ms); }
 inline void coastText(char *buf, unsigned size, int frames) { std::snprintf(buf, size, "%d", frames); }

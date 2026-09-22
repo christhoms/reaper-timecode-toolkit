@@ -43,6 +43,7 @@ struct Plugin {
   std::atomic<int> muteLtc{1};                 // parameter "Mute LTC"
   std::atomic<bool> muteFromGui{false};
   std::atomic<bool> exclusiveFromGui{false};   // parameter "Exclusive": the value lives in the sender
+  std::atomic<bool> offsetFromGui{false};      // parameter "Offset" (on / off); the timecode itself is project state in the sender
   bool wasPlaying = false;
   // REAPER project settings, read on the main thread through REAPER's API (other hosts: 30 fps, no offset)
   double (*fnFrameRate)(void *, bool *) = nullptr;
@@ -70,6 +71,32 @@ struct Plugin {
     sender.setExclusive(on);
     exclusiveFromGui.store(true, std::memory_order_relaxed);
     if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
+  }
+
+  void setOffsetFromGui(bool on) {  // the timecode stays; only whether it is applied changes
+    const ctltc::Timecode o = sender.offset();
+    sender.setOffset(o.h, o.m, o.s, o.f, on);
+    offsetFromGui.store(true, std::memory_order_relaxed);
+    if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
+  }
+  // "HH:MM:SS:FF" (also H:M:S:F, ';' or '.' as separators). Anything else: unchanged, returns false.
+  bool setOffsetTextFromGui(const std::string &text) {
+    int v[4] = {0, 0, 0, 0}, n = 0, cur = -1;
+    for (char c : text) {
+      if (c >= '0' && c <= '9') { if (cur < 0) { if (n == 4) return false; cur = 0; } cur = cur * 10 + (c - '0'); if (cur > 99) return false; }
+      else if (c == ':' || c == ';' || c == '.') { if (cur < 0) return false; v[n++] = cur; cur = -1; }
+      else if (c != ' ') return false;
+    }
+    if (cur >= 0) { if (n == 4) return false; v[n++] = cur; }
+    if (n != 4 || v[0] > 23 || v[1] > 59 || v[2] > 59 || v[3] > 59) return false;
+    sender.setOffset(v[0], v[1], v[2], v[3], sender.offsetOn());
+    return true;
+  }
+  std::string offsetText() const {
+    const ctltc::Timecode o = sender.offset();
+    char b[16];
+    std::snprintf(b, sizeof(b), "%02d:%02d:%02d:%02d", o.h, o.m, o.s, o.f);
+    return b;
   }
 
   // latency parameter (ms). The value lives in the sender; these flags move changes between the threads.
@@ -112,7 +139,7 @@ struct Plugin {
 };
 
 // ---- what the window shows (same words on both platforms) ----------------------------------------------------
-constexpr int kGuiW = 440, kGuiH = 238, kGuiBar = 104;
+constexpr int kGuiW = 440, kGuiH = 271, kGuiBar = 137;
 enum UiColor { kUiOff, kUiDim, kUiLtc, kUiDaw, kUiCoast, kUiWarn };
 
 struct UiState {
