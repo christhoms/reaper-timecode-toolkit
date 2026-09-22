@@ -60,6 +60,6 @@ Requires Xcode command line tools; for Windows targets `brew install mingw-w64 m
 
 ## Status
 
-macOS: 1.4.0 used in REAPER 7; 1.6.1 passes the test suite. Windows: compiles; not yet run.
+macOS: 1.4.0 used in REAPER 7; 1.6.1 passes the test suite. Windows: 1.6.1 passes the test suite and a first REAPER 7 pass on Windows 11 (`docs/WINDOWS-TEST.md`).
 
 LTC decoder ported from the Cockos JSFX "SMPTE LTC Reader/Meter". CLAP headers: `third_party/clap` (MIT).
