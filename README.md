@@ -1,6 +1,6 @@
 # CT LTC to Art-Net Timecode
 
-CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode (ArtTimeCode, UDP 6454), one destination IP.
+CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode (ArtTimeCode, UDP 6454), to one address or broadcast on one interface.
 
 - Decode LTC at 24, 25, 29.97 (DF and NDF) and 30 fps from either input channel, 0 to -55 dBFS
 - Coast over damaged LTC
@@ -24,7 +24,7 @@ Neither installer is code signed. macOS: right-click > Open. Windows: More info 
 
 | Parameter | Range | Default | Stored |
 |---|---|---|---|
-| Art-Net to | IPv4 address, unicast or broadcast | none | per machine |
+| Art-Net to | IPv4 address; or Broadcast: an interface, sent to its directed broadcast address | none | per machine |
 | Latency (ms) | -500 to 500; positive sends later | 0 | per machine |
 | Source | Auto, LTC only, DAW only | Auto | per project |
 | Coast (frames) | 0 to 150; 0 disables | 30 | per project |

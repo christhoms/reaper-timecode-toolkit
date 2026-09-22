@@ -40,6 +40,8 @@ struct Gui {
 const double kBarY = kGuiH - kGuiBar;
 RECT seg_rect(const Gui &g, int i) { return g.rc(84 + i * 74, kBarY + 72, 73, 24); }
 RECT mute_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 72, 92, 24); }
+RECT bcast_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 6, 92, 24); }
+RECT ifpick_rect(const Gui &g) { return g.rc(84, kBarY + 6, kGuiW - 12 - 92 - 8 - 84, 24); }
 RECT excl_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 39, 92, 24); }
 RECT offset_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 105, 92, 24); }
 RECT unit_rect(const Gui &g, int i) { return g.rc(184 + i * 27, kBarY + 39, 26, 24); }
@@ -93,6 +95,22 @@ void step_latency(Gui &g, int dir) {
   show_latency(g);
 }
 
+void pick_interface(Gui &g) {  // a popup menu of the interfaces that are up
+  const std::vector<ctltc::NetIf> ifs = ctltc::list_interfaces();
+  HMENU m = CreatePopupMenu();
+  for (size_t i = 0; i < ifs.size(); i++) {
+    const std::string label = ifs[i].name + "  " + ifs[i].addr;
+    AppendMenuA(m, MF_STRING | (ifs[i].addr == g.plug->ifAddr ? MF_CHECKED : 0), UINT_PTR(i + 1), label.c_str());
+  }
+  if (ifs.empty()) AppendMenuA(m, MF_STRING | MF_GRAYED, 0, S::noInterface);
+  RECT r = ifpick_rect(g);
+  POINT pt{r.left, r.bottom};
+  ClientToScreen(g.hwnd, &pt);
+  const int pick = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, g.hwnd, nullptr);
+  DestroyMenu(m);
+  if (pick > 0 && size_t(pick) <= ifs.size()) g.plug->setInterface(ifs[pick - 1].addr);
+}
+
 LRESULT CALLBACK edit_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR ref) {
   Gui &g = *(Gui *)ref;
   if (m == WM_GETDLGCODE) return DLGC_WANTALLKEYS | DefSubclassProc(h, m, w, l);
@@ -130,9 +148,17 @@ void paint(Gui &g, HDC dc) {
     text(dc, g.fUi, sel ? kText : kDim, S::latencyUnits[i], unit_rect(g, i), DT_CENTER | DT_VCENTER);
   }
   if (!u.latencyNote.empty()) text(dc, g.fUi, kDim, u.latencyNote, g.rc(246, kBarY + 40, 88, 22), DT_LEFT | DT_VCENTER);
-  text(dc, g.fUi, ui_color(u.sendColor), u.send, g.rc(kGuiW - 160, kBarY + 7, 148, 22), DT_RIGHT | DT_VCENTER);
 
-  fill(dc, g.rc(84, kBarY + 6, 154, 24), kField);   // field grounds behind the borderless EDITs
+  const bool bc = g.plug->broadcast;
+  if (bc) {  // interface picker in place of the address field
+    fill(dc, ifpick_rect(g), kField);
+    RECT r = ifpick_rect(g); r.left += g.px(6); r.right -= g.px(6);
+    text(dc, g.fMono, g.plug->ifAddr.empty() ? kDim : kText, g.plug->interfaceLabel(), r, DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+  } else {
+    fill(dc, g.rc(84, kBarY + 6, 154, 24), kField);   // field ground behind the borderless EDIT
+  }
+  fill(dc, bcast_rect(g), bc ? kSel : kField);
+  text(dc, g.fUi, bc ? kText : kDim, S::broadcast, bcast_rect(g), DT_CENTER | DT_VCENTER);
   fill(dc, g.rc(84, kBarY + 39, 74, 24), kField);
 
   for (int dir : {1, -1}) {  // stepper
@@ -204,6 +230,8 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       for (int i = 0; i < 3; i++) { const RECT r = seg_rect(*g, i); if (PtInRect(&r, p)) g->plug->setModeFromGui(i); }
       { const RECT r = mute_rect(*g); if (PtInRect(&r, p)) g->plug->setMuteFromGui(g->plug->muteLtc.load() == 0); }
       for (int i = 0; i < 2; i++) { const RECT r = unit_rect(*g, i); if (PtInRect(&r, p)) { g->plug->setLatencyUnitFromGui(i); show_latency(*g); } }
+      { const RECT r = bcast_rect(*g); if (PtInRect(&r, p)) { g->plug->setBroadcast(!g->plug->broadcast); ShowWindow(g->ip, g->plug->broadcast ? SW_HIDE : SW_SHOW); } }
+      { const RECT r = ifpick_rect(*g); if (g->plug->broadcast && PtInRect(&r, p)) pick_interface(*g); }
       { const RECT r = offset_rect(*g); if (PtInRect(&r, p)) g->plug->setOffsetFromGui(!g->plug->sender.offsetOn()); }
       { const RECT r = excl_rect(*g); if (PtInRect(&r, p)) g->plug->setExclusiveFromGui(!g->plug->sender.exclusive()); }
       for (int dir : {1, -1}) {
@@ -296,6 +324,7 @@ bool gui_parent(Plugin *s, const clap_window_t *win) {
   g->ip = edit(kIdIp, 90, kBarY + 9, 142, ES_LEFT);
   g->lat = edit(kIdLatency, 88, kBarY + 42, 64, ES_RIGHT);
   SetWindowTextA(g->ip, s->ip.c_str());
+  if (s->broadcast) ShowWindow(g->ip, SW_HIDE);
   g->offs = edit(kIdOffset, 90, kBarY + 108, 100, ES_LEFT);
   show_offset(*g);
   show_latency(*g);

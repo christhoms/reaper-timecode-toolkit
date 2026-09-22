@@ -25,9 +25,9 @@ mac() {
 win() {
   rm -rf build/win && mkdir -p build/win
   W="x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0A00 -static -s $INC"
-  $W -shared -o build/win/CT_LTC_ArtNet.clap src/plugin.cpp src/gui_win.cpp -lws2_32 -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32
-  $W -o build/win/test_core.exe test/test_core.cpp -lws2_32 -lwinmm -lavrt
-  $W -o build/win/ltc_file_check.exe test/ltc_file_check.cpp -lws2_32 -lwinmm -lavrt
+  $W -shared -o build/win/CT_LTC_ArtNet.clap src/plugin.cpp src/gui_win.cpp -lws2_32 -liphlpapi -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32
+  $W -o build/win/test_core.exe test/test_core.cpp -lws2_32 -liphlpapi -lwinmm -lavrt
+  $W -o build/win/ltc_file_check.exe test/ltc_file_check.cpp -lws2_32 -liphlpapi -lwinmm -lavrt
 }
 
 case "$1" in

@@ -408,23 +408,28 @@ inline bool valid_ip(const std::string &ip) {
   return !ip.empty() && inet_pton(AF_INET, ip.c_str(), &a) == 1;
 }
 
-inline std::string load_ip() {
-  if (const char *e = std::getenv("CT_ARTNET_IP")) return e;  // tests only
-  std::string ip;
+// destination.txt: one line, "<ip>" (unicast) or "broadcast <interface address>" (directed broadcast on that interface)
+struct Destination { bool broadcast = false; std::string ip; };
+inline Destination load_destination() {
+  Destination d;
+  if (const char *e = std::getenv("CT_ARTNET_IP")) { d.ip = e; return d; }  // tests only
+  std::string line;
   if (FILE *f = std::fopen((prefs_path() + kSep + "destination.txt").c_str(), "r")) {
-    char line[64] = {0};
-    if (std::fgets(line, sizeof(line), f)) ip = line;
+    char b[64] = {0};
+    if (std::fgets(b, sizeof(b), f)) line = b;
     std::fclose(f);
   }
-  while (!ip.empty() && (ip.back() == '\n' || ip.back() == '\r' || ip.back() == ' ')) ip.pop_back();
-  return valid_ip(ip) ? ip : "";
+  while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' ')) line.pop_back();
+  if (line.rfind("broadcast ", 0) == 0) { d.broadcast = true; line = line.substr(10); }
+  d.ip = valid_ip(line) ? line : "";
+  return d;
 }
 
-inline void save_ip(const std::string &ip) {
+inline void save_destination(const Destination &d) {
   if (std::getenv("CT_ARTNET_IP")) return;
   make_dir(prefs_path());
   if (FILE *f = std::fopen((prefs_path() + kSep + "destination.txt").c_str(), "w")) {
-    std::fprintf(f, "%s\n", ip.c_str());
+    std::fprintf(f, "%s%s\n", d.broadcast ? "broadcast " : "", d.ip.c_str());
     std::fclose(f);
   }
 }

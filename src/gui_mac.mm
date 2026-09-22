@@ -7,6 +7,8 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 @interface CTLTCView : NSView <NSTextFieldDelegate> {
   Plugin *_plug;
   NSTextField *_ipField;
+  NSPopUpButton *_ifPicker;
+  NSSegmentedControl *_bcastSeg;
   NSTextField *_latField;
   NSStepper *_latStepper;
   NSSegmentedControl *_unitSeg;
@@ -51,6 +53,23 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   _ipField.action = @selector(ipEntered:);
   _ipField.delegate = self;
   [self addSubview:_ipField];
+
+  _ifPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(84, kH - kBar + 6, kW - 12 - 92 - 8 - 84, 24) pullsDown:NO];
+  _ifPicker.controlSize = NSControlSizeSmall;
+  _ifPicker.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+  _ifPicker.target = self;
+  _ifPicker.action = @selector(interfacePicked:);
+  [self addSubview:_ifPicker];
+  _bcastSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::broadcast) ]
+                                                trackingMode:NSSegmentSwitchTrackingSelectAny
+                                                      target:self
+                                                      action:@selector(broadcastChanged:)];
+  _bcastSeg.frame = NSMakeRect(kW - 12 - 92, kH - kBar + 6, 92, 24);
+  _bcastSeg.controlSize = NSControlSizeSmall;
+  _bcastSeg.font = [NSFont systemFontOfSize:11];
+  [_bcastSeg setSelected:plug->broadcast forSegment:0];
+  [self addSubview:_bcastSeg];
+  [self showDestinationMode];
 
   // latency row: value in ms or frames (type it, or step one; hold Shift while clicking the stepper = one of the other unit)
   _latShown = plug->latencyShown();
@@ -156,6 +175,37 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 
 - (void)muteChanged:(id)sender {
   if (_plug) _plug->setMuteFromGui([_muteSeg isSelectedForSegment:0]);
+}
+
+- (void)showDestinationMode {  // address field for unicast, interface picker for broadcast
+  if (!_plug) return;
+  _ipField.hidden = _plug->broadcast;
+  _ifPicker.hidden = !_plug->broadcast;
+  if (_plug->broadcast) [self fillInterfaces];
+}
+
+- (void)fillInterfaces {
+  [_ifPicker removeAllItems];
+  [_ifPicker addItemWithTitle:@(S::chooseInterface)];
+  NSInteger sel = 0;
+  for (const ctltc::NetIf &n : ctltc::list_interfaces()) {
+    [_ifPicker addItemWithTitle:@((n.name + "  " + n.addr).c_str())];
+    _ifPicker.lastItem.representedObject = @(n.addr.c_str());
+    if (n.addr == _plug->ifAddr) sel = _ifPicker.numberOfItems - 1;
+  }
+  [_ifPicker selectItemAtIndex:sel];
+}
+
+- (void)interfacePicked:(id)sender {
+  if (!_plug) return;
+  NSString *addr = _ifPicker.selectedItem.representedObject;
+  _plug->setInterface(std::string(addr ? addr.UTF8String : ""));
+}
+
+- (void)broadcastChanged:(id)sender {
+  if (!_plug) return;
+  _plug->setBroadcast([_bcastSeg isSelectedForSegment:0]);
+  [self showDestinationMode];
 }
 
 - (void)unitChanged:(id)sender {
@@ -284,7 +334,6 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     [self draw:S::latency at:NSMakePoint(12, kH - kBar + 43) color:kUiDim rightAligned:NO];
     [self draw:S::source at:NSMakePoint(12, kH - kBar + 77) color:kUiDim rightAligned:NO];
     [self draw:u.latencyNote.c_str() at:NSMakePoint(248, kH - kBar + 43) color:kUiDim rightAligned:NO];
-    [self draw:u.send.c_str() at:NSMakePoint(kW - 12, kH - kBar + 10) color:u.sendColor rightAligned:YES];
   } @catch (NSException *e) {
     NSLog(@"CT LTC ArtNet: draw failed: %@", e);
   }

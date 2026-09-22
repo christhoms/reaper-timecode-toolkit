@@ -104,7 +104,10 @@ struct Plugin {
   std::atomic<bool> latencyFromGui{false};   // GUI changed it -> tell the host (output event)
   std::atomic<bool> latencyNeedsSave{false}; // host changed it -> write the preference on the main thread
 
-  std::string ip;  // UI thread only
+  // destination (UI thread only): unicast to ip, or directed broadcast on the interface whose address is ifAddr
+  std::string ip, ifAddr;
+  bool broadcast = false;
+  std::atomic<bool> noInterface{false};  // broadcast chosen, interface not present
   void *view = nullptr;  // platform GUI object
   double guiScale = 1.0;
 
@@ -130,11 +133,32 @@ struct Plugin {
     ctltc::save_latency_unit(unit ? 1 : 0);
   }
 
+  // point the sender at the current destination; false = nothing to send to
+  bool applyDestination() {
+    bool ok = false;
+    if (broadcast) {
+      for (const ctltc::NetIf &n : ctltc::list_interfaces()) if (n.addr == ifAddr) { ok = sender.setTarget(n.bcast); break; }
+      if (!ok) sender.setTarget("");
+      noInterface.store(!ok && !ifAddr.empty());
+    } else {
+      ok = sender.setTarget(ip);
+      noInterface.store(false);
+    }
+    return ok;
+  }
+  void saveDestination() { ctltc::save_destination({broadcast, broadcast ? ifAddr : ip}); }
   bool setIP(const std::string &s) {
-    if (!sender.setTarget(s)) return false;
+    if (!ctltc::valid_ip(s)) return false;
     ip = s;
-    ctltc::save_ip(s);
-    return true;
+    saveDestination();
+    return applyDestination();
+  }
+  void setInterface(const std::string &addr) { ifAddr = addr; saveDestination(); applyDestination(); }
+  void setBroadcast(bool on) { broadcast = on; saveDestination(); applyDestination(); }
+  std::string interfaceLabel() const {  // what the picker shows
+    if (ifAddr.empty()) return S::chooseInterface;
+    for (const ctltc::NetIf &n : ctltc::list_interfaces()) if (n.addr == ifAddr) return n.name + "  " + n.addr;
+    return ifAddr;
   }
 };
 
@@ -144,8 +168,8 @@ enum UiColor { kUiOff, kUiDim, kUiLtc, kUiDaw, kUiCoast, kUiWarn };
 
 struct UiState {
   char tc[16];
-  std::string line, send, latencyNote;
-  UiColor tcColor = kUiOff, lineColor = kUiDim, sendColor = kUiWarn;
+  std::string line, latencyNote;
+  UiColor tcColor = kUiOff, lineColor = kUiDim;
 };
 
 inline UiState ui_state(Plugin &s) {
@@ -173,8 +197,10 @@ inline UiState ui_state(Plugin &s) {
   const int latch = s.latchDisp.load();
   if (latch >= 0) add(S::ltcLeg(latch));
 
-  if (s.ip.empty()) u.send = S::noDestination;
-  else if (locked && s.sender.failed()) u.send = S::sendFailed;
+  // destination faults join the status line
+  const char *send = (s.broadcast ? s.ifAddr.empty() : s.ip.empty()) ? S::noDestination : s.noInterface.load() ? S::noInterface
+                     : (locked && s.sender.failed()) ? S::sendFailed : nullptr;
+  if (send) { add(send); u.lineColor = kUiWarn; }
 
   const double offMs = s.sender.latencyMs();
   if (offMs != 0) u.latencyNote = s.latencyUnit.load() ? S::latencyMs(offMs) : S::latencyFrames(offMs / s.frameMs());

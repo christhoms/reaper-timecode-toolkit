@@ -27,8 +27,10 @@ namespace {
 
 bool plug_init(const clap_plugin_t *p) {
   Plugin *s = P(p);
-  s->ip = ctltc::load_ip();
-  if (!s->ip.empty()) s->sender.setTarget(s->ip);
+  const ctltc::Destination d = ctltc::load_destination();
+  s->broadcast = d.broadcast;
+  (d.broadcast ? s->ifAddr : s->ip) = d.ip;
+  s->applyDestination();
   s->sender.setLatencyMs(ctltc::load_latency_ms());
   s->latencyUnit.store(ctltc::load_latency_unit());
   s->hostParams = (const clap_host_params_t *)s->host->get_extension(s->host, CLAP_EXT_PARAMS);

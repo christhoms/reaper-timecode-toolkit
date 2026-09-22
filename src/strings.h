@@ -26,7 +26,7 @@ constexpr const char *portIn = "LTC in", *portOut = "Out";
 constexpr const char *artnetTo = "Art-Net to", *latency = "Latency", *source = "Source";
 constexpr const char *latencyUnits[2] = {"ms", "fr"};
 constexpr const char *sourceNames[3] = {"Auto", "LTC only", "DAW only"};
-constexpr const char *muteLtc = "Mute LTC", *exclusive = "Exclusive", *offset = "Offset";
+constexpr const char *muteLtc = "Mute LTC", *exclusive = "Exclusive", *offset = "Offset", *broadcast = "Broadcast";
 constexpr const char *offsetZero = "00:00:00:00";
 
 // status line, joined with sep
@@ -40,7 +40,8 @@ inline const char *ltcLeg(int channel) { return channel == 0 ? "LTC L" : "LTC R"
 
 // faults
 constexpr const char *noLock = "no lock", *noDestination = "no destination", *sendFailed = "send failed";
-constexpr const char *otherInstance = "other instance sending";
+constexpr const char *otherInstance = "other instance sending", *noInterface = "no interface";
+constexpr const char *chooseInterface = "interface";  // the broadcast picker with nothing chosen
 
 // beside the latency field: the same value in the other unit
 inline std::string latencyFrames(double frames) { char b[32]; std::snprintf(b, sizeof(b), "%+.2f fr", frames); return b; }
