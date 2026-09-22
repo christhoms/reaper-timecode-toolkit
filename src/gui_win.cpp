@@ -1,4 +1,4 @@
-// Windows GUI: one child window, painted with GDI. The two text fields are EDIT controls; the offset stepper and
+// Windows GUI: one child window, painted with GDI. The two text fields are EDIT controls; the latency stepper and
 // the source selector are painted and hit-tested here so they match the dark surface.
 #ifdef _WIN32
 #include "plugin.h"
@@ -9,7 +9,7 @@
 namespace {
 
 constexpr UINT_PTR kTimerTick = 1, kTimerRepeat = 2;
-constexpr int kIdIp = 100, kIdOffset = 101;
+constexpr int kIdIp = 100, kIdLatency = 101;
 
 COLORREF rgb(double r, double g, double b) { return RGB(int(r * 255 + 0.5), int(g * 255 + 0.5), int(b * 255 + 0.5)); }
 const COLORREF kGround = rgb(0.055, 0.062, 0.075), kBarBg = rgb(0.10, 0.11, 0.13), kField = rgb(0.13, 0.14, 0.165),
@@ -27,10 +27,10 @@ COLORREF ui_color(UiColor c) {
 
 struct Gui {
   Plugin *plug = nullptr;
-  HWND hwnd = nullptr, ip = nullptr, off = nullptr;
+  HWND hwnd = nullptr, ip = nullptr, lat = nullptr;
   HFONT fTc = nullptr, fUi = nullptr, fMono = nullptr;
   HBRUSH bField = nullptr;
-  double scale = 1.0, offShown = 0.0;
+  double scale = 1.0, latShown = 0.0;
   bool ipBad = false;
   int ticks = 0, repeatDir = 0;
   int px(double v) const { return int(v * scale + 0.5); }
@@ -41,6 +41,7 @@ const double kBarY = kGuiH - kGuiBar;
 RECT seg_rect(const Gui &g, int i) { return g.rc(84 + i * 74, kBarY + 72, 73, 24); }
 RECT mute_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 72, 92, 24); }
 RECT excl_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 39, 92, 24); }
+RECT unit_rect(const Gui &g, int i) { return g.rc(184 + i * 27, kBarY + 39, 26, 24); }
 RECT step_rect(const Gui &g, int dir) { return g.rc(160, kBarY + (dir > 0 ? 39 : 51), 18, 12); }
 
 HINSTANCE module() {
@@ -49,11 +50,11 @@ HINSTANCE module() {
   return m;
 }
 
-void show_offset(Gui &g, double ms) {
-  g.offShown = ms;
+void show_latency(Gui &g) {  // in the unit the window is set to
+  g.latShown = g.plug->latencyShown();
   char b[32];
-  std::snprintf(b, sizeof(b), "%.1f", ms);
-  SetWindowTextA(g.off, b);
+  std::snprintf(b, sizeof(b), g.plug->latencyFormat(), g.latShown);
+  SetWindowTextA(g.lat, b);
 }
 
 void commit_ip(Gui &g) {
@@ -67,26 +68,24 @@ void commit_ip(Gui &g) {
   InvalidateRect(g.ip, nullptr, TRUE);
 }
 
-void commit_offset(Gui &g) {
+void commit_latency(Gui &g) {
   char b[32] = {0};
-  GetWindowTextA(g.off, b, sizeof(b));
+  GetWindowTextA(g.lat, b, sizeof(b));
   for (char *c = b; *c; c++) if (*c == ',') *c = '.';
-  g.plug->setOffsetFromGui(ctltc::clamp_offset(std::atof(b)));
-  show_offset(g, g.plug->sender.offsetMs());
+  g.plug->setLatencyShownFromGui(std::atof(b));
+  show_latency(g);
   SetFocus(g.hwnd);
 }
 
-void step_offset(Gui &g, int dir) {
-  const bool frame = GetKeyState(VK_SHIFT) < 0;  // Shift: one frame
-  const double step = frame ? g.plug->frameDur.load() * 1e3 : 1.0;
-  g.plug->setOffsetFromGui(ctltc::clamp_offset(g.offShown + dir * step));
-  show_offset(g, g.plug->sender.offsetMs());
+void step_latency(Gui &g, int dir) {
+  g.plug->stepLatencyFromGui(dir, GetKeyState(VK_SHIFT) < 0);  // Shift: one of the other unit
+  show_latency(g);
 }
 
 LRESULT CALLBACK edit_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR ref) {
   Gui &g = *(Gui *)ref;
   if (m == WM_GETDLGCODE) return DLGC_WANTALLKEYS | DefSubclassProc(h, m, w, l);
-  if (m == WM_KEYDOWN && w == VK_RETURN) { h == g.ip ? commit_ip(g) : commit_offset(g); return 0; }
+  if (m == WM_KEYDOWN && w == VK_RETURN) { h == g.ip ? commit_ip(g) : commit_latency(g); return 0; }
   if (m == WM_CHAR && (w == '\r' || w == '\n')) return 0;
   return DefSubclassProc(h, m, w, l);
 }
@@ -112,10 +111,14 @@ void paint(Gui &g, HDC dc) {
 
   fill(dc, g.rc(0, kBarY, kGuiW, kGuiBar), kBarBg);
   text(dc, g.fUi, kDim, S::artnetTo, g.rc(12, kBarY + 7, 70, 22), DT_LEFT | DT_VCENTER);
-  text(dc, g.fUi, kDim, S::offset, g.rc(12, kBarY + 40, 70, 22), DT_LEFT | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::latency, g.rc(12, kBarY + 40, 70, 22), DT_LEFT | DT_VCENTER);
   text(dc, g.fUi, kDim, S::source, g.rc(12, kBarY + 73, 70, 22), DT_LEFT | DT_VCENTER);
-  text(dc, g.fUi, kDim, S::ms, g.rc(184, kBarY + 40, 30, 22), DT_LEFT | DT_VCENTER);
-  if (!u.offsetNote.empty()) text(dc, g.fUi, kDim, u.offsetNote, g.rc(216, kBarY + 40, 120, 22), DT_LEFT | DT_VCENTER);
+  for (int i = 0; i < 2; i++) {
+    const bool sel = i == g.plug->latencyUnit.load();
+    fill(dc, unit_rect(g, i), sel ? kSel : kField);
+    text(dc, g.fUi, sel ? kText : kDim, S::latencyUnits[i], unit_rect(g, i), DT_CENTER | DT_VCENTER);
+  }
+  if (!u.latencyNote.empty()) text(dc, g.fUi, kDim, u.latencyNote, g.rc(246, kBarY + 40, 88, 22), DT_LEFT | DT_VCENTER);
   text(dc, g.fUi, ui_color(u.sendColor), u.send, g.rc(kGuiW - 160, kBarY + 7, 148, 22), DT_RIGHT | DT_VCENTER);
 
   fill(dc, g.rc(84, kBarY + 6, 154, 24), kField);   // field grounds behind the borderless EDITs
@@ -173,9 +176,9 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       return 0;
     }
     case WM_TIMER:
-      if (w == kTimerRepeat) { if (g->repeatDir) step_offset(*g, g->repeatDir); return 0; }
+      if (w == kTimerRepeat) { if (g->repeatDir) step_latency(*g, g->repeatDir); return 0; }
       if ((g->ticks++ % 30) == 0) g->plug->refreshProject();
-      if (g->plug->sender.offsetMs() != g->offShown && GetFocus() != g->off) show_offset(*g, g->plug->sender.offsetMs());
+      if (g->plug->latencyShown() != g->latShown && GetFocus() != g->lat) show_latency(*g);
       InvalidateRect(h, nullptr, FALSE);
       return 0;
     case WM_LBUTTONDOWN: {
@@ -183,11 +186,12 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       SetFocus(h);
       for (int i = 0; i < 3; i++) { const RECT r = seg_rect(*g, i); if (PtInRect(&r, p)) g->plug->setModeFromGui(i); }
       { const RECT r = mute_rect(*g); if (PtInRect(&r, p)) g->plug->setMuteFromGui(g->plug->muteLtc.load() == 0); }
+      for (int i = 0; i < 2; i++) { const RECT r = unit_rect(*g, i); if (PtInRect(&r, p)) { g->plug->setLatencyUnitFromGui(i); show_latency(*g); } }
       { const RECT r = excl_rect(*g); if (PtInRect(&r, p)) g->plug->setExclusiveFromGui(!g->plug->sender.exclusive()); }
       for (int dir : {1, -1}) {
         const RECT r = step_rect(*g, dir);
         if (!PtInRect(&r, p)) continue;
-        step_offset(*g, dir);
+        step_latency(*g, dir);
         g->repeatDir = dir;
         SetCapture(h);
         SetTimer(h, kTimerRepeat, 120, nullptr);
@@ -200,7 +204,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       return 0;
     case WM_COMMAND:
       if (LOWORD(w) == kIdIp && HIWORD(w) == EN_CHANGE && g->ipBad) { g->ipBad = false; InvalidateRect(g->ip, nullptr, TRUE); }
-      if (LOWORD(w) == kIdOffset && HIWORD(w) == EN_KILLFOCUS) show_offset(*g, g->plug->sender.offsetMs());
+      if (LOWORD(w) == kIdLatency && HIWORD(w) == EN_KILLFOCUS) show_latency(*g);
       return 0;
     case WM_CTLCOLOREDIT: {
       HDC dc = (HDC)w;
@@ -219,7 +223,7 @@ HFONT font(const wchar_t *face, int px, int weight) {
 }
 
 void destroy_window(Gui &g) {
-  if (g.hwnd) { KillTimer(g.hwnd, kTimerTick); DestroyWindow(g.hwnd); g.hwnd = g.ip = g.off = nullptr; }
+  if (g.hwnd) { KillTimer(g.hwnd, kTimerTick); DestroyWindow(g.hwnd); g.hwnd = g.ip = g.lat = nullptr; }
   for (HGDIOBJ o : {(HGDIOBJ)g.fTc, (HGDIOBJ)g.fUi, (HGDIOBJ)g.fMono, (HGDIOBJ)g.bField}) if (o) DeleteObject(o);
   g.fTc = g.fUi = g.fMono = nullptr;
   g.bField = nullptr;
@@ -269,9 +273,9 @@ bool gui_parent(Plugin *s, const clap_window_t *win) {
     return e;
   };
   g->ip = edit(kIdIp, 90, kBarY + 9, 142, ES_LEFT);
-  g->off = edit(kIdOffset, 88, kBarY + 42, 64, ES_RIGHT);
+  g->lat = edit(kIdLatency, 88, kBarY + 42, 64, ES_RIGHT);
   SetWindowTextA(g->ip, s->ip.c_str());
-  show_offset(*g, s->sender.offsetMs());
+  show_latency(*g);
   SetTimer(g->hwnd, kTimerTick, 33, nullptr);
   return true;
 }

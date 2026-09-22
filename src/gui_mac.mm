@@ -7,9 +7,10 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 @interface CTLTCView : NSView <NSTextFieldDelegate> {
   Plugin *_plug;
   NSTextField *_ipField;
-  NSTextField *_offField;
-  NSStepper *_offStepper;
-  double _offShown;
+  NSTextField *_latField;
+  NSStepper *_latStepper;
+  NSSegmentedControl *_unitSeg;
+  double _latShown;
   NSSegmentedControl *_srcSeg;
   NSSegmentedControl *_muteSeg;
   NSSegmentedControl *_exclSeg;
@@ -49,27 +50,36 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   _ipField.delegate = self;
   [self addSubview:_ipField];
 
-  // offset row: value in ms (type it, or step 1 ms; hold Shift while clicking the stepper = 1 frame)
-  _offShown = plug->sender.offsetMs();
-  _offField = [[NSTextField alloc] initWithFrame:NSMakeRect(86, kH - kBar + 40, 70, 22)];
-  _offField.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
-  _offField.alignment = NSTextAlignmentRight;
-  _offField.bezelStyle = NSTextFieldRoundedBezel;
-  _offField.focusRingType = NSFocusRingTypeNone;
-  _offField.stringValue = [NSString stringWithFormat:@"%.1f", _offShown];
-  _offField.target = self;
-  _offField.action = @selector(offsetEntered:);
-  [self addSubview:_offField];
-  _offStepper = [[NSStepper alloc] initWithFrame:NSMakeRect(158, kH - kBar + 38, 19, 27)];
-  _offStepper.minValue = ctltc::kOffsetMinMs;
-  _offStepper.maxValue = ctltc::kOffsetMaxMs;
-  _offStepper.increment = 1.0;
-  _offStepper.valueWraps = NO;
-  _offStepper.autorepeat = YES;
-  _offStepper.doubleValue = _offShown;
-  _offStepper.target = self;
-  _offStepper.action = @selector(offsetStepped:);
-  [self addSubview:_offStepper];
+  // latency row: value in ms or frames (type it, or step one; hold Shift while clicking the stepper = one of the other unit)
+  _latShown = plug->latencyShown();
+  _latField = [[NSTextField alloc] initWithFrame:NSMakeRect(86, kH - kBar + 40, 70, 22)];
+  _latField.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
+  _latField.alignment = NSTextAlignmentRight;
+  _latField.bezelStyle = NSTextFieldRoundedBezel;
+  _latField.focusRingType = NSFocusRingTypeNone;
+  _latField.stringValue = [NSString stringWithFormat:@(plug->latencyFormat()), _latShown];
+  _latField.target = self;
+  _latField.action = @selector(latencyEntered:);
+  [self addSubview:_latField];
+  _latStepper = [[NSStepper alloc] initWithFrame:NSMakeRect(158, kH - kBar + 38, 19, 27)];
+  _latStepper.minValue = -1;  // used for its direction only: the action reads the sign and puts it back to 0
+  _latStepper.maxValue = 1;
+  _latStepper.increment = 1.0;
+  _latStepper.valueWraps = NO;
+  _latStepper.autorepeat = YES;
+  _latStepper.doubleValue = 0;
+  _latStepper.target = self;
+  _latStepper.action = @selector(latencyStepped:);
+  [self addSubview:_latStepper];
+  _unitSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::latencyUnits[0]), @(S::latencyUnits[1]) ]
+                                               trackingMode:NSSegmentSwitchTrackingSelectOne
+                                                     target:self
+                                                     action:@selector(unitChanged:)];
+  _unitSeg.frame = NSMakeRect(182, kH - kBar + 39, 60, 24);
+  _unitSeg.controlSize = NSControlSizeSmall;
+  _unitSeg.font = [NSFont systemFontOfSize:11];
+  _unitSeg.selectedSegment = plug->latencyUnit.load();
+  [self addSubview:_unitSeg];
 
   // source row
   _srcSeg = [NSSegmentedControl segmentedControlWithLabels:@[ @(S::sourceNames[0]), @(S::sourceNames[1]), @(S::sourceNames[2]) ]
@@ -125,6 +135,12 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   if (_plug) _plug->setMuteFromGui([_muteSeg isSelectedForSegment:0]);
 }
 
+- (void)unitChanged:(id)sender {
+  if (!_plug) return;
+  _plug->setLatencyUnitFromGui((int)_unitSeg.selectedSegment);
+  [self showLatency];
+}
+
 - (void)exclusiveChanged:(id)sender {
   if (_plug) _plug->setExclusiveFromGui([_exclSeg isSelectedForSegment:0]);
 }
@@ -135,35 +151,31 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     if ([_muteSeg isSelectedForSegment:0] != (_plug->muteLtc.load() != 0)) [_muteSeg setSelected:_plug->muteLtc.load() != 0 forSegment:0];
     if ([_exclSeg isSelectedForSegment:0] != _plug->sender.exclusive()) [_exclSeg setSelected:_plug->sender.exclusive() forSegment:0];
     if ((_tickCount++ % 30) == 0) _plug->refreshProject();  // project frame rate / start offset, once a second
-    const double v = _plug->sender.offsetMs();
-    if (v != _offShown && _offField.currentEditor == nil) [self showOffset:v];
+    if (_plug->latencyShown() != _latShown && _latField.currentEditor == nil) [self showLatency];
   }
   [self setNeedsDisplay:YES];
 }
 
-- (void)showOffset:(double)ms {
-  _offShown = ms;
-  _offField.stringValue = [NSString stringWithFormat:@"%.1f", ms];
-  _offStepper.doubleValue = ms;
+- (void)showLatency {  // in the unit the window is set to
+  if (!_plug) return;
+  _latShown = _plug->latencyShown();
+  _latField.stringValue = [NSString stringWithFormat:@(_plug->latencyFormat()), _latShown];
 }
 
-- (void)offsetEntered:(id)sender {
+- (void)latencyEntered:(id)sender {
   if (!_plug) return;
-  NSString *s = [_offField.stringValue stringByReplacingOccurrencesOfString:@"," withString:@"."];
-  _plug->setOffsetFromGui(ctltc::clamp_offset(s.doubleValue));
-  [self showOffset:_plug->sender.offsetMs()];
+  NSString *s = [_latField.stringValue stringByReplacingOccurrencesOfString:@"," withString:@"."];
+  _plug->setLatencyShownFromGui(s.doubleValue);
+  [self showLatency];
   [self.window makeFirstResponder:self];
 }
 
-- (void)offsetStepped:(id)sender {
+- (void)latencyStepped:(id)sender {
   if (!_plug) return;
-  double v = _offStepper.doubleValue;
-  if (NSEvent.modifierFlags & NSEventModifierFlagShift) {  // Shift = one frame per click
-    const double step = _plug->frameDur.load() * 1e3, dir = v > _offShown ? 1.0 : -1.0;
-    v = _offShown + dir * step;
-  }
-  _plug->setOffsetFromGui(ctltc::clamp_offset(v));
-  [self showOffset:_plug->sender.offsetMs()];
+  const int dir = _latStepper.doubleValue > 0 ? 1 : -1;
+  _latStepper.doubleValue = 0;
+  _plug->stepLatencyFromGui(dir, (NSEvent.modifierFlags & NSEventModifierFlagShift) != 0);  // Shift = one of the other unit
+  [self showLatency];
 }
 
 - (void)ipEntered:(id)sender {
@@ -217,10 +229,9 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     [[NSColor colorWithSRGBRed:0.10 green:0.11 blue:0.13 alpha:1] setFill];
     NSRectFill(NSMakeRect(0, kH - kBar, kW, kBar));
     [self draw:S::artnetTo at:NSMakePoint(12, kH - kBar + 10) color:kUiDim rightAligned:NO];
-    [self draw:S::offset at:NSMakePoint(12, kH - kBar + 43) color:kUiDim rightAligned:NO];
+    [self draw:S::latency at:NSMakePoint(12, kH - kBar + 43) color:kUiDim rightAligned:NO];
     [self draw:S::source at:NSMakePoint(12, kH - kBar + 77) color:kUiDim rightAligned:NO];
-    [self draw:S::ms at:NSMakePoint(184, kH - kBar + 43) color:kUiDim rightAligned:NO];
-    [self draw:u.offsetNote.c_str() at:NSMakePoint(216, kH - kBar + 43) color:kUiDim rightAligned:NO];
+    [self draw:u.latencyNote.c_str() at:NSMakePoint(248, kH - kBar + 43) color:kUiDim rightAligned:NO];
     [self draw:u.send.c_str() at:NSMakePoint(kW - 12, kH - kBar + 10) color:u.sendColor rightAligned:YES];
   } @catch (NSException *e) {
     NSLog(@"CT LTC ArtNet: draw failed: %@", e);

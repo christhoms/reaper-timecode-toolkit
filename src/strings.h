@@ -23,7 +23,8 @@ constexpr const char *vendor = "Chris Thoms";
 constexpr const char *portIn = "LTC in", *portOut = "Out";
 
 // window labels
-constexpr const char *artnetTo = "Art-Net to", *offset = "Offset", *source = "Source", *ms = "ms";
+constexpr const char *artnetTo = "Art-Net to", *latency = "Latency", *source = "Source";
+constexpr const char *latencyUnits[2] = {"ms", "fr"};
 constexpr const char *sourceNames[3] = {"Auto", "LTC only", "DAW only"};
 constexpr const char *muteLtc = "Mute LTC", *exclusive = "Exclusive";
 
@@ -40,13 +41,15 @@ inline const char *ltcLeg(int channel) { return channel == 0 ? "LTC L" : "LTC R"
 constexpr const char *noLock = "no lock", *noDestination = "no destination", *sendFailed = "send failed";
 constexpr const char *otherInstance = "other instance sending";
 
-inline std::string offsetFrames(double frames) { char b[32]; std::snprintf(b, sizeof(b), "%+.2f fr", frames); return b; }
+// beside the latency field: the same value in the other unit
+inline std::string latencyFrames(double frames) { char b[32]; std::snprintf(b, sizeof(b), "%+.2f fr", frames); return b; }
+inline std::string latencyMs(double ms) { char b[32]; std::snprintf(b, sizeof(b), "%+.1f ms", ms); return b; }
 
 // host parameters
-constexpr const char *paramOffset = "Offset (ms)", *paramSource = "Source", *paramCoast = "Coast (frames)", *paramMute = "Mute LTC";
+constexpr const char *paramLatency = "Latency (ms)", *paramSource = "Source", *paramCoast = "Coast (frames)", *paramMute = "Mute LTC";
 constexpr const char *paramExclusive = "Exclusive";
 constexpr const char *coastOff = "off", *on = "on", *off = "off";
-inline void offsetText(char *buf, unsigned size, double ms) { std::snprintf(buf, size, "%+.1f ms", ms); }
+inline void latencyText(char *buf, unsigned size, double ms) { std::snprintf(buf, size, "%+.1f ms", ms); }
 inline void coastText(char *buf, unsigned size, int frames) { std::snprintf(buf, size, "%d", frames); }
 
 }  // namespace S

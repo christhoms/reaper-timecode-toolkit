@@ -429,25 +429,46 @@ inline void save_ip(const std::string &ip) {
   }
 }
 
-// output offset in milliseconds (+ = later, - = earlier), remembered like the IP: it belongs to the rig, not the project
-constexpr double kOffsetMinMs = -500.0, kOffsetMaxMs = 500.0;
-inline double clamp_offset(double ms) { return std::isfinite(ms) ? std::min(kOffsetMaxMs, std::max(kOffsetMinMs, ms)) : 0.0; }
+// output latency in milliseconds (+ = later, - = earlier), remembered like the IP: it belongs to the rig, not the project
+constexpr double kLatencyMinMs = -500.0, kLatencyMaxMs = 500.0;
+inline double clamp_latency(double ms) { return std::isfinite(ms) ? std::min(kLatencyMaxMs, std::max(kLatencyMinMs, ms)) : 0.0; }
 
-inline double load_offset_ms() {
+inline double load_latency_ms() {
   if (std::getenv("CT_ARTNET_IP")) return 0.0;  // tests
   double ms = 0.0;
-  if (FILE *f = std::fopen((prefs_path() + kSep + "offset_ms.txt").c_str(), "r")) {
+  if (FILE *f = std::fopen((prefs_path() + kSep + "latency_ms.txt").c_str(), "r")) {
     if (std::fscanf(f, "%lf", &ms) != 1) ms = 0.0;
     std::fclose(f);
   }
-  return clamp_offset(ms);
+  return clamp_latency(ms);
 }
 
-inline void save_offset_ms(double ms) {
+inline void save_latency_ms(double ms) {
   if (std::getenv("CT_ARTNET_IP")) return;
   make_dir(prefs_path());
-  if (FILE *f = std::fopen((prefs_path() + kSep + "offset_ms.txt").c_str(), "w")) {
-    std::fprintf(f, "%.2f\n", clamp_offset(ms));
+  if (FILE *f = std::fopen((prefs_path() + kSep + "latency_ms.txt").c_str(), "w")) {
+    std::fprintf(f, "%.2f\n", clamp_latency(ms));
+    std::fclose(f);
+  }
+}
+
+// unit the window shows and steps the latency in: 0 ms, 1 frames. The stored value stays in ms.
+inline int load_latency_unit() {
+  if (std::getenv("CT_ARTNET_IP")) return 0;  // tests
+  int u = 0;
+  if (FILE *f = std::fopen((prefs_path() + kSep + "latency_unit.txt").c_str(), "r")) {
+    char w[8] = {0};
+    if (std::fscanf(f, "%7s", w) == 1 && !std::strcmp(w, "fr")) u = 1;
+    std::fclose(f);
+  }
+  return u;
+}
+
+inline void save_latency_unit(int unit) {
+  if (std::getenv("CT_ARTNET_IP")) return;
+  make_dir(prefs_path());
+  if (FILE *f = std::fopen((prefs_path() + kSep + "latency_unit.txt").c_str(), "w")) {
+    std::fputs(unit ? "fr\n" : "ms\n", f);
     std::fclose(f);
   }
 }
@@ -529,9 +550,9 @@ class Sender {
   bool exclusive() const { return exclusive_.load(std::memory_order_relaxed); }
   bool blocked() const { return blocked_.load(std::memory_order_relaxed); }  // another sender holds the token
 
-  // positive: later. Negative: earlier, running ahead of the decoder by |offset| (overshoots by that at a stop).
-  void setOffsetMs(double ms) { offsetMs_.store(clamp_offset(ms), std::memory_order_relaxed); }
-  double offsetMs() const { return offsetMs_.load(std::memory_order_relaxed); }
+  // positive: later. Negative: earlier, running ahead of the decoder by |latency| (overshoots by that at a stop).
+  void setLatencyMs(double ms) { latencyMs_.store(clamp_latency(ms), std::memory_order_relaxed); }
+  double latencyMs() const { return latencyMs_.load(std::memory_order_relaxed); }
 
  private:
   struct Obs { long count; double t, dur; int fps, type; bool df; };
@@ -604,7 +625,7 @@ class Sender {
       if (active && now - lastObsWall > 2.0) { active = false; release(); blocked_.store(false, std::memory_order_relaxed); }
       contend(active && exclusive());
 
-      const double off = offsetMs_.load(std::memory_order_relaxed) * 1e-3;
+      const double off = latencyMs_.load(std::memory_order_relaxed) * 1e-3;
       const long ahead = off < 0 ? long(std::ceil(-off / dur_)) : 0;  // frames we may run ahead of the decoder
       const long kMax = nLast + ahead;
       if (active && kNext <= kMax) {
@@ -637,7 +658,7 @@ class Sender {
   const uint64_t id_;
   std::atomic<bool> exclusive_{true}, claim_{false}, blocked_{false};
   bool contending_ = false;
-  std::atomic<double> offsetMs_{0.0};
+  std::atomic<double> latencyMs_{0.0};
   int fps_ = 30, type_ = 3;
   bool df_ = false;
   double dur_ = 1.0 / 30.0;

@@ -29,7 +29,8 @@ bool plug_init(const clap_plugin_t *p) {
   Plugin *s = P(p);
   s->ip = ctltc::load_ip();
   if (!s->ip.empty()) s->sender.setTarget(s->ip);
-  s->sender.setOffsetMs(ctltc::load_offset_ms());
+  s->sender.setLatencyMs(ctltc::load_latency_ms());
+  s->latencyUnit.store(ctltc::load_latency_unit());
   s->hostParams = (const clap_host_params_t *)s->host->get_extension(s->host, CLAP_EXT_PARAMS);
   // REAPER hands its API to CLAP plug-ins through this extension: project frame rate and project start offset
   struct reaper_plugin_info_t { int caller_version; void *hwnd_main; int (*Register)(const char *, void *); void *(*GetFunc)(const char *); };
@@ -74,8 +75,8 @@ void plug_reset(const clap_plugin_t *p) {
   s->activeCh = -1;
 }
 
-// ---- parameter: Offset (ms) --------------------------------------------------------------------------------------
-constexpr clap_id kParamOffset = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4, kParamExclusive = 5;
+// ---- parameters --------------------------------------------------------------------------------------
+constexpr clap_id kParamLatency = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4, kParamExclusive = 5;
 
 // host -> plugin value events, and (after a GUI edit) plugin -> host
 void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_events_t *out) {
@@ -88,9 +89,9 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
     if (ev->param_id == kParamMute) { s->muteLtc.store(ev->value >= 0.5 ? 1 : 0, std::memory_order_relaxed); continue; }
     if (ev->param_id == kParamExclusive) { s->sender.setExclusive(ev->value >= 0.5); continue; }
     if (ev->param_id == kParamCoast) { s->coastLimit.store(ctltc::clamp_coast(ev->value), std::memory_order_relaxed); continue; }
-    if (ev->param_id != kParamOffset) continue;
-    s->sender.setOffsetMs(ev->value);
-    s->offsetNeedsSave.store(true, std::memory_order_relaxed);
+    if (ev->param_id != kParamLatency) continue;
+    s->sender.setLatencyMs(ev->value);
+    s->latencyNeedsSave.store(true, std::memory_order_relaxed);
     if (s->host->request_callback) s->host->request_callback(s->host);
   }
   auto tell = [&](std::atomic<bool> &fromGui, clap_id id, double value) {  // a GUI edit -> the host
@@ -105,7 +106,7 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
     ev.value = value;
     out->try_push(out, &ev.header);
   };
-  tell(s->offsetFromGui, kParamOffset, s->sender.offsetMs());
+  tell(s->latencyFromGui, kParamLatency, s->sender.latencyMs());
   tell(s->muteFromGui, kParamMute, s->muteLtc.load(std::memory_order_relaxed));
   tell(s->modeFromGui, kParamSource, s->mode.load(std::memory_order_relaxed));
   tell(s->exclusiveFromGui, kParamExclusive, s->sender.exclusive() ? 1 : 0);
@@ -147,11 +148,11 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
   }
   if (index != 0) return false;
   std::memset(info, 0, sizeof(*info));
-  info->id = kParamOffset;
+  info->id = kParamLatency;
   info->flags = CLAP_PARAM_IS_AUTOMATABLE;
-  std::snprintf(info->name, sizeof(info->name), "%s", S::paramOffset);
-  info->min_value = ctltc::kOffsetMinMs;
-  info->max_value = ctltc::kOffsetMaxMs;
+  std::snprintf(info->name, sizeof(info->name), "%s", S::paramLatency);
+  info->min_value = ctltc::kLatencyMinMs;
+  info->max_value = ctltc::kLatencyMaxMs;
   info->default_value = 0.0;
   return true;
 }
@@ -161,8 +162,8 @@ bool params_get_value(const clap_plugin_t *p, clap_id id, double *v) {
   if (id == kParamCoast) { *v = P(p)->coastLimit.load(); return true; }
   if (id == kParamMute) { *v = P(p)->muteLtc.load(); return true; }
   if (id == kParamExclusive) { *v = P(p)->sender.exclusive() ? 1 : 0; return true; }
-  if (id != kParamOffset) return false;
-  *v = P(p)->sender.offsetMs();
+  if (id != kParamLatency) return false;
+  *v = P(p)->sender.latencyMs();
   return true;
 }
 bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf, uint32_t size) {
@@ -174,8 +175,8 @@ bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf
     else S::coastText(buf, size, c);
     return true;
   }
-  if (id != kParamOffset) return false;
-  S::offsetText(buf, size, v);
+  if (id != kParamLatency) return false;
+  S::latencyText(buf, size, v);
   return true;
 }
 bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, double *v) {
@@ -186,8 +187,8 @@ bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, do
   }
   if ((id == kParamMute || id == kParamExclusive) && txt) { *v = !std::strcmp(txt, S::on) || std::atof(txt) >= 0.5 ? 1 : 0; return true; }
   if (id == kParamCoast && txt) { *v = !std::strcmp(txt, S::coastOff) ? 0 : ctltc::clamp_coast(std::atof(txt)); return true; }
-  if (id != kParamOffset || !txt) return false;
-  *v = ctltc::clamp_offset(std::atof(txt));
+  if (id != kParamLatency || !txt) return false;
+  *v = ctltc::clamp_latency(std::atof(txt));
   return true;
 }
 void params_flush(const clap_plugin_t *p, const clap_input_events_t *in, const clap_output_events_t *out) { param_events(P(p), in, out); }
@@ -391,7 +392,7 @@ const void *plug_get_extension(const clap_plugin_t *, const char *id) {
 }
 void plug_on_main_thread(const clap_plugin_t *p) {
   Plugin *s = P(p);
-  if (s->offsetNeedsSave.exchange(false, std::memory_order_relaxed)) ctltc::save_offset_ms(s->sender.offsetMs());
+  if (s->latencyNeedsSave.exchange(false, std::memory_order_relaxed)) ctltc::save_latency_ms(s->sender.latencyMs());
   s->refreshProject();
 }
 

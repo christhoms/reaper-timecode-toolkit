@@ -9,5 +9,5 @@ CLAP plugin, LTC or DAW time to Art-Net timecode. macOS (Cocoa) and Windows (Win
   `plugin.cpp` only reference S. No copy outside it, no new string without Chris's wording or approval.
 - `./build.sh` must end with "all checks passed" before any commit. Timing checks (sender, DAW time packets) fail at random on a loaded machine: rerun before suspecting the code.
 - Windows runtime is unverified. Windows sessions start at `docs/WINDOWS-TEST.md` and record results there.
-- State blob "CTLA" v5, 11 bytes (v1-v4 still load). Parameter ids 1 Offset, 2 Source, 3 Coast, 4 Mute LTC, 5 Exclusive: never renumber.
+- State blob "CTLA" v5, 11 bytes (v1-v4 still load). Parameter ids 1 Latency (ms), 2 Source, 3 Coast, 4 Mute LTC, 5 Exclusive: never renumber.
 - Commits: author Chris Thoms, no AI attribution.

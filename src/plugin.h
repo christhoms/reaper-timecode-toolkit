@@ -72,20 +72,35 @@ struct Plugin {
     if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
   }
 
-  // offset parameter (ms). The value lives in the sender; these flags move changes between the threads.
+  // latency parameter (ms). The value lives in the sender; these flags move changes between the threads.
   const clap_host_params_t *hostParams = nullptr;
-  std::atomic<bool> offsetFromGui{false};   // GUI changed it -> tell the host (output event)
-  std::atomic<bool> offsetNeedsSave{false}; // host changed it -> write the preference on the main thread
+  std::atomic<bool> latencyFromGui{false};   // GUI changed it -> tell the host (output event)
+  std::atomic<bool> latencyNeedsSave{false}; // host changed it -> write the preference on the main thread
 
   std::string ip;  // UI thread only
   void *view = nullptr;  // platform GUI object
   double guiScale = 1.0;
 
-  void setOffsetFromGui(double ms) {  // main thread
-    sender.setOffsetMs(ms);
-    ctltc::save_offset_ms(sender.offsetMs());
-    offsetFromGui.store(true, std::memory_order_relaxed);
+  void setLatencyFromGui(double ms) {  // main thread
+    sender.setLatencyMs(ms);
+    ctltc::save_latency_ms(sender.latencyMs());
+    latencyFromGui.store(true, std::memory_order_relaxed);
     if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
+  }
+
+  // the window shows and steps the latency in ms or in frames of the running rate; the parameter stays in ms
+  std::atomic<int> latencyUnit{0};  // 0 ms, 1 frames (per machine)
+  double frameMs() const { return frameDur.load(std::memory_order_relaxed) * 1e3; }
+  double latencyShown() const { return latencyUnit.load() ? sender.latencyMs() / frameMs() : sender.latencyMs(); }
+  const char *latencyFormat() const { return latencyUnit.load() ? "%.2f" : "%.1f"; }
+  void setLatencyShownFromGui(double v) { setLatencyFromGui(ctltc::clamp_latency(latencyUnit.load() ? v * frameMs() : v)); }
+  void stepLatencyFromGui(int dir, bool otherUnit) {  // one of the shown unit; with Shift one of the other unit
+    const bool frames = (latencyUnit.load() != 0) != otherUnit;
+    setLatencyFromGui(ctltc::clamp_latency(sender.latencyMs() + dir * (frames ? frameMs() : 1.0)));
+  }
+  void setLatencyUnitFromGui(int unit) {
+    latencyUnit.store(unit ? 1 : 0);
+    ctltc::save_latency_unit(unit ? 1 : 0);
   }
 
   bool setIP(const std::string &s) {
@@ -102,7 +117,7 @@ enum UiColor { kUiOff, kUiDim, kUiLtc, kUiDaw, kUiCoast, kUiWarn };
 
 struct UiState {
   char tc[16];
-  std::string line, send, offsetNote;
+  std::string line, send, latencyNote;
   UiColor tcColor = kUiOff, lineColor = kUiDim, sendColor = kUiWarn;
 };
 
@@ -134,8 +149,8 @@ inline UiState ui_state(Plugin &s) {
   if (s.ip.empty()) u.send = S::noDestination;
   else if (locked && s.sender.failed()) u.send = S::sendFailed;
 
-  const double offMs = s.sender.offsetMs();
-  if (offMs != 0) u.offsetNote = S::offsetFrames(offMs / (s.frameDur.load() * 1e3));
+  const double offMs = s.sender.latencyMs();
+  if (offMs != 0) u.latencyNote = s.latencyUnit.load() ? S::latencyMs(offMs) : S::latencyFrames(offMs / s.frameMs());
   return u;
 }
 

@@ -44,7 +44,7 @@ On that track: Track performance options > Prevent anticipative FX.
 | Space bar with a field focused | types into the field, does not start REAPER's transport |
 | Packets | Wireshark `udp.port == 6454`: one ArtTimeCode per frame, even spacing; or a grandMA3 timecode slot follows |
 | Save, close, reopen project | Source, Coast, Mute LTC restored; LTC leg muted from the first block |
-| `%APPDATA%\CT LTC ArtNet\` | `destination.txt`, `offset_ms.txt` written |
+| `%APPDATA%\CT LTC ArtNet\` | `destination.txt`, `latency_ms.txt`, `latency_unit.txt` written |
 | Remove the FX, close REAPER | no hang, no crash |
 
 Known risks to look at first: keyboard focus inside REAPER's FX window (`edit_proc` in `src/gui_win.cpp`), DPI

@@ -407,9 +407,9 @@ static void test_sender(Listener &L) {
     s.stop();
     check_packets(L, "real-time feed", 30, false, dur, c0 + 1, 70);
   }
-  for (double offMs : {0.0, 20.0, -50.0}) {  // output offset: packets must leave that much later / earlier than the frame boundary
+  for (double offMs : {0.0, 20.0, -50.0}) {  // output latency: packets must leave that much later / earlier than the frame boundary
     L.clear();
-    Sender s; s.setTarget("127.0.0.1"); s.setOffsetMs(offMs); s.start();
+    Sender s; s.setTarget("127.0.0.1"); s.setLatencyMs(offMs); s.start();
     const long c0 = tc_to_count(10, 0, 0, 0, 30, false); const double t0 = now_s() + 0.05; const int nfr = 60;
     for (int k = 0; k < nfr; k++) {
       const double due = t0 + k * dur;
@@ -429,10 +429,10 @@ static void test_sender(Listener &L) {
       sum += err; nn++; worst = std::max(worst, std::fabs(err - offMs));
     }
     const double mean = nn ? sum / nn : 1e9;
-    std::printf("  offset %+6.1f ms: packets leave %+7.2f ms from the frame boundary (worst %.2f ms off), last frame sent %+ld vs decoded\n",
+    std::printf("  latency %+6.1f ms: packets leave %+7.2f ms from the frame boundary (worst %.2f ms off), last frame sent %+ld vs decoded\n",
                 offMs, mean, worst, last - (c0 + nfr));
-    CHECK(order && nn > 40 && std::fabs(mean - offMs) < 1.5 && worst < 5.0, "offset %+.1f ms: mean %+.2f, worst %.2f", offMs, mean, worst);
-    CHECK(last - (c0 + nfr) == (offMs < 0 ? long(std::ceil(-offMs * 1e-3 / dur)) : 0), "offset %+.1f ms: overshoot at stop", offMs);
+    CHECK(order && nn > 40 && std::fabs(mean - offMs) < 1.5 && worst < 5.0, "latency %+.1f ms: mean %+.2f, worst %.2f", offMs, mean, worst);
+    CHECK(last - (c0 + nfr) == (offMs < 0 ? long(std::ceil(-offMs * 1e-3 / dur)) : 0), "latency %+.1f ms: overshoot at stop", offMs);
   }
   {  // anticipative host: 6 frames at once every 200 ms, all seen EARLY
     L.clear();

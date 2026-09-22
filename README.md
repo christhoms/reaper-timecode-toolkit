@@ -6,7 +6,7 @@ CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode (ArtTimeCode, UDP 6454), 
 - Coast over damaged LTC
 - Send the host playhead when the input carries no LTC
 - Mute a one-sided LTC leg and route the programme leg to both outputs
-- Offset the output by -500 to +500 ms
+- Latency: move the output by -500 to +500 ms, shown in ms or frames
 
 Installers: Releases.
 
@@ -24,13 +24,13 @@ Neither installer is code signed. macOS: right-click > Open. Windows: More info 
 | Parameter | Range | Default | Stored |
 |---|---|---|---|
 | Art-Net to | IPv4 address, unicast or broadcast | none | per machine |
-| Offset (ms) | -500 to 500; positive sends later | 0 | per machine |
+| Latency (ms) | -500 to 500; positive sends later | 0 | per machine |
 | Source | Auto, LTC only, DAW only | Auto | per project |
 | Coast (frames) | 0 to 150; 0 disables | 30 | per project |
 | Mute LTC | on, off; off passes both legs through | on | per project |
 | Exclusive | on, off | on | per project |
 
-Exclusive: within one host process the instance that started last sends alone, and every other instance is silent until 2 s after it stops. Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The offset stepper moves 1 ms, or one frame with Shift.
+Exclusive: within one host process the instance that started last sends alone, and every other instance is silent until 2 s after it stops. Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The Latency field shows ms or frames (ms | fr); the stepper moves one of the shown unit, or one of the other with Shift.
 
 Per-machine settings: `~/Library/Application Support/CT LTC ArtNet/` or `%APPDATA%\CT LTC ArtNet\`.
 
@@ -39,7 +39,7 @@ Per-machine settings: `~/Library/Application Support/CT LTC ArtNet/` or `%APPDAT
 - Art-Net type: 0 film (24), 1 EBU (25), 2 DF (29.97 drop), 3 SMPTE (30 and 29.97 NDF).
 - DAW time follows the project frame rate and start offset in REAPER; other hosts send 30 fps. 23.976 sends as 24; 48, 50, 59.94 and 60 send at half rate.
 - Auto falls back to DAW time 0.8 s after the last LTC frame, 0.15 s on an input with unknown signal, at once on a silent input.
-- A negative offset overshoots by that amount at a stop.
+- A negative latency overshoots by that amount at a stop.
 
 ## REAPER
 
