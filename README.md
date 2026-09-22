@@ -1,13 +1,13 @@
 # Reaper Timecode Toolkit
 
-CLAP plugin: SMPTE LTC or DAW time to Art-Net timecode (ArtTimeCode, UDP 6454), to one address or broadcast on one interface.
+CLAP plugin. SMPTE LTC or DAW time in, Art-Net timecode out.
 
 - Decode LTC at 24, 25, 29.97 (DF and NDF) and 30 fps from either input channel, 0 to -55 dBFS
 - Coast over damaged LTC
 - Send the host playhead when the input carries no LTC
 - Mute a one-sided LTC leg and route the programme leg to both outputs
-- Latency: move the output by -500 to +500 ms, shown in ms or frames
-- Offset: add a timecode to every frame sent (00:00:00:00 in the DAW sends as 05:20:00:00)
+- Send to one address or broadcast on one interface
+- Add a timecode offset to the output
 
 Installers: Releases.
 
@@ -18,51 +18,39 @@ Installers: Releases.
 | macOS 11+, universal | `ReaperTimecodeToolkit-<version>-mac.pkg` | `/Library/Audio/Plug-Ins/CLAP/ReaperTimecodeToolkit.clap` |
 | Windows 10+ x64 | `ReaperTimecodeToolkit-<version>-win64-setup.exe` | `C:\Program Files\Common Files\CLAP\ReaperTimecodeToolkit.clap` |
 
-Neither installer is code signed. macOS: right-click > Open. Windows: More info > Run anyway.
+Unsigned. macOS: right-click > Open. Windows: More info > Run anyway.
 
 ## Parameters
 
 | Parameter | Range | Default | Stored |
 |---|---|---|---|
-| Art-Net to | IPv4 address; or Broadcast: an interface, sent to its directed broadcast address | none | per machine |
-| Latency (ms) | -500 to 500; positive sends later | 0 | per machine |
+| Art-Net to | IPv4 address, or Broadcast on an interface | none | per machine |
+| Latency (ms) | -500 to 500 | 0 | per machine |
 | Source | Auto, LTC only, DAW only | Auto | per project |
-| Coast (frames) | 0 to 150; 0 disables | 30 | per project |
-| Mute LTC | on, off; off passes both legs through | on | per project |
+| Coast (frames) | 0 to 150 | 30 | per project |
+| Mute LTC | on, off | on | per project |
 | Exclusive | on, off | on | per project |
-| Offset | on, off; the timecode (HH:MM:SS:FF) is project state, not a parameter | off | per project |
+| Offset | on, off; HH:MM:SS:FF | off | per project |
 
-Exclusive: within one host process the instance that started last sends alone, and every other instance is silent until 2 s after it stops. Coast is a host parameter only. Mute LTC applies to one-sided LTC: the LTC leg is muted and the other leg feeds both outputs. The Latency field shows ms or frames (ms | fr); the stepper moves one of the shown unit, or one of the other with Shift.
+Exclusive: the instance that started last sends, the others in the same host wait. Coast is a host parameter only.
 
 Per-machine settings: `~/Library/Application Support/Reaper Timecode Toolkit/` or `%APPDATA%\Reaper Timecode Toolkit\`.
 
-## Behaviour
+## Notes
 
-- Art-Net type: 0 film (24), 1 EBU (25), 2 DF (29.97 drop), 3 SMPTE (30 and 29.97 NDF).
+- Art-Net type 0 film (24), 1 EBU (25), 2 DF (29.97 drop), 3 SMPTE (30, 29.97 NDF).
 - DAW time follows the project frame rate and start offset in REAPER; other hosts send 30 fps. 23.976 sends as 24; 48, 50, 59.94 and 60 send at half rate.
-- Auto falls back to DAW time 0.8 s after the last LTC frame, 0.15 s on an input with unknown signal, at once on a silent input.
-- A negative latency overshoots by that amount at a stop.
-
-## REAPER
-
-Anticipative FX renders the track about 200 ms ahead of playback, so timecode leads the audio. On the LTC track:
-Track performance options > Prevent anticipative FX.
+- Auto falls back to DAW time 0.8 s after the last LTC frame.
+- REAPER: on the LTC track, Track performance options > Prevent anticipative FX.
 
 ## Build
 
-    ./build.sh            # macOS plugin + tests
+    ./build.sh            # macOS
     ./build.sh install    # copy to ~/Library/Audio/Plug-Ins/CLAP
-    ./build.sh win        # Windows x64 plugin + test_core.exe, cross-compiled
-    ./build.sh dist       # both, plus installers in dist/
+    ./build.sh win        # Windows x64, cross-compiled
+    ./build.sh dist       # both, installers in dist/
+    build.ps1             # Windows, native MinGW-w64
 
-Requires Xcode command line tools; for Windows targets `brew install mingw-w64 makensis`.
-
-    build/mac/test_core <plugin binary>
-    test_core.exe ReaperTimecodeToolkit.clap
-    ffmpeg -v error -i <file> -af "pan=mono|c0=c1" -f f32le -ar 48000 - | build/mac/ltc_file_check 48000 30
-
-## Status
-
-2.0.0 (renamed from CT LTC to Art-Net Timecode 1.6.1; new CLAP id, so projects saved with 1.x show the plugin as missing). Windows: passes the test suite, Exclusive / Latency / Offset / Broadcast checked live in REAPER 7.78. macOS: not yet built at 2.0.0.
+Xcode command line tools; for Windows targets `brew install mingw-w64 makensis`.
 
 LTC decoder ported from the Cockos JSFX "SMPTE LTC Reader/Meter". CLAP headers: `third_party/clap` (MIT).

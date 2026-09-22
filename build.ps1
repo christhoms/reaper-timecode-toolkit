@@ -1,4 +1,4 @@
-# Windows x64 plugin + tests with MinGW-w64 g++ on PATH.
+# Windows x64 plugin with MinGW-w64 g++ on PATH; runs the checks.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 New-Item -ItemType Directory -Force build\win | Out-Null

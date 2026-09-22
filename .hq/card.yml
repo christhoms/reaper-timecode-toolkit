@@ -9,7 +9,6 @@ memory:
   - README.md
   - CLAUDE.md
 focus: >
-  2.0.0 on branch next (renamed from ltc-artnet): Exclusive, Latency (ms|fr), Offset, Broadcast; Windows verified
-  live in REAPER 7.78, macOS GUI changes need a Mac build + gui_test pass before merge. 1.6.1 Windows verification
-  on main (docs/WINDOWS-TEST.md). NEXT: Mac build, publish 2.0.0, rename the GitHub repo.
+  2.0.0 released (Windows installer). Owed: macOS build of 2.0.0 (gui_mac.mm unbuilt since the rename), then the
+  .pkg on the release. Open: Ctrl+A in the Win32 IP field.
 updated: 2026-09-21
