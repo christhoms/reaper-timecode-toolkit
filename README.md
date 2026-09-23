@@ -2,9 +2,9 @@
 
 CLAP plugin - generates Artnet Timecode either from LTC audio or DAW time.
 
-- 24, 25, 29.97 and 30 fps LTC on either channel
+- 24, 25, 29.97 and 30 fps LTC supported
 - Coasts over dropouts
-- Mutes LTC by default
+- Mutes LTC by default and sends non-LTC legs to both stereo channels.
 - Unicast or broadcast Artnet Timecode
 - Timecode offset
 
