@@ -251,8 +251,7 @@ clap_process_status plug_process(const clap_plugin_t *p, const clap_process_t *p
     // one-sided LTC? (decided per block, from lock state at the end of this block)
     if (nch == 2) {
       const double tEndR = t0 + double(n) / s->srate;
-      s->router.update(tEndR - s->lastLockCh[0] < 0.3, tEndR - s->lastLockCh[1] < 0.3, s->dec[0].hasSignal(), s->dec[1].hasSignal(),
-                       double(n) / s->srate);
+      s->router.update(tEndR - s->lastLockCh[0] < 0.3, tEndR - s->lastLockCh[1] < 0.3);
       s->latchDisp.store(s->router.latch(), std::memory_order_relaxed);
     }
   }

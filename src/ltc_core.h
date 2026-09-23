@@ -75,7 +75,7 @@ class Decoder {
     bufpos_ = 0;
     gotbit_ = -1;
     syncpos_ = -1;
-    rateIdx_ = 0;
+    if (lockedIdx_ >= 0) rateIdx_ = lockedIdx_;  // last rate that locked: a stop/start re-locks in two frames
     pulsesize_ = srate_ / kRates[rateIdx_] / 160.0;
     nsamp_ = 0;
     lastSyncSamp_ = -1;
@@ -159,6 +159,7 @@ class Decoder {
             const bool chained = plausible && periodOk && prevCount_ >= 0 && prevFps_ == out.fps && prevDf_ == out.df &&
                                  cnt == (prevCount_ + 1) % frames_per_day(out.fps, out.df);
             got = chained ? 2 : plausible ? 1 : 0;
+            if (chained) lockedIdx_ = rateIdx_;
             prevCount_ = cnt; prevFps_ = out.fps; prevDf_ = out.df;
             nosync_ = 0;
             syncpos_ = 0;
@@ -176,7 +177,7 @@ class Decoder {
 
   double srate_ = 48000, minthresh_ = 1e-4, threshenv_ = 0, thresh_ = 1, itm1_ = 0, otm1_ = 0;
   double pulsesize_ = 10, period_ = 0;
-  int lastsign_ = 1, gotbit_ = -1, syncpos_ = -1, bufpos_ = 0, rateIdx_ = 0;
+  int lastsign_ = 1, gotbit_ = -1, syncpos_ = -1, bufpos_ = 0, rateIdx_ = 0, lockedIdx_ = -1;
   long sillen_ = 0, nsamp_ = 0, lastSyncSamp_ = -1, nosync_ = 0, prevCount_ = -1, sinceEdge_ = 0;
   int prevFps_ = 0;
   bool prevDf_ = false;
@@ -255,7 +256,8 @@ class Coaster {
   Frame tmpl_;
 };
 
-// ---- one-sided LTC: programme on one leg, LTC on the other ---------------------------------------------------
+// ---- one-sided LTC: programme on one leg, LTC on the other. Once found, the LTC leg stays muted until LTC turns up
+// elsewhere: a pause, a fade or a different file must not open the mute ---------------------------------------------------
 // LTC on one leg only: mute it, other leg to both outputs (10 ms crossfade). Latched while the LTC leg is silent;
 // released when both legs carry LTC or the latched leg carries non-LTC signal for 1 s.
 class Router {
@@ -266,24 +268,12 @@ class Router {
   void setLatch(int ch) {
     latch_ = ch < 0 ? -1 : (ch > 0 ? 1 : 0);
     if (latch_ >= 0) { muteCh_ = latch_; if (mute_) gain_ = 1.0f; }  // restored state: muted from the first sample
-    notLtc_ = 0.0;
   }
 
-  // once per block, after decoding it
-  void update(bool locked0, bool locked1, bool signal0, bool signal1, double blockSeconds) {
-    if (locked0 != locked1) {
-      latch_ = locked0 ? 0 : 1;
-      notLtc_ = 0.0;
-    } else if (locked0 && locked1) {
-      latch_ = -1;  // LTC on both legs: nothing to separate
-    } else if (latch_ >= 0) {
-      if (latch_ == 0 ? signal0 : signal1) {
-        notLtc_ += blockSeconds;
-        if (notLtc_ > 1.0) latch_ = -1;
-      } else {
-        notLtc_ = 0.0;
-      }
-    }
+  // once per block, after decoding it. The latch is sticky: only LTC on the other leg, or on both, moves it
+  void update(bool locked0, bool locked1) {
+    if (locked0 != locked1) latch_ = locked0 ? 0 : 1;
+    else if (locked0 && locked1) latch_ = -1;  // LTC on both legs: nothing to separate
     if (latch_ >= 0 && gain_ <= 0.0f) muteCh_ = latch_;
     if (latch_ >= 0 && latch_ != muteCh_) muteCh_ = latch_;
   }
@@ -311,7 +301,6 @@ class Router {
   int latch_ = -1, muteCh_ = 0;
   bool mute_ = true;
   float gain_ = 0.0f, step_ = 1.0f / 480.0f;
-  double notLtc_ = 0.0;
 };
 
 // ---- DAW time: the host's playhead as a timecode source ------------------------------------------------------------

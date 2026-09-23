@@ -313,29 +313,25 @@ static void punctual_until(double t) {
 
 static void test_router() {
   std::printf("one-sided LTC router\n");
-  const uint32_t n = 480; const double bs = n / 48000.0;
+  const uint32_t n = 480;
   std::vector<float> a(n), b(n), oa(n), ob(n);
   for (uint32_t i = 0; i < n; i++) { a[i] = 0.25f * std::sin(i * 0.1f); b[i] = (i / 8) % 2 ? 0.5f : -0.5f; }  // a = music, b = "LTC"
   Router r; r.setSampleRate(48000);
-  r.update(false, false, true, true, bs); r.render(a.data(), b.data(), oa.data(), ob.data(), n);
+  r.update(false, false); r.render(a.data(), b.data(), oa.data(), ob.data(), n);
   CHECK(r.latch() == -1 && oa == a && ob == b, "no lock: pass-through");
-  r.update(false, true, true, true, bs); r.render(a.data(), b.data(), oa.data(), ob.data(), n);
+  r.update(false, true); r.render(a.data(), b.data(), oa.data(), ob.data(), n);
   CHECK(r.latch() == 1 && oa == a && ob[0] != a[0] && ob[n - 1] == a[n - 1], "lock on right: left stays, right crossfades to left within 10 ms");
   r.render(a.data(), b.data(), oa.data(), ob.data(), n);
   CHECK(oa == a && ob == a, "latched: left on both outputs");
   // in place
   std::vector<float> ia = a, ib = b; r.render(ia.data(), ib.data(), ia.data(), ib.data(), n);
   CHECK(ia == a && ib == a, "in-place render");
-  // LTC leg silent (stopped): stays latched for as long as it likes
-  for (int k = 0; k < 500; k++) r.update(false, false, true, false, bs);
-  CHECK(r.latch() == 1, "silent LTC leg keeps the latch");
-  // LTC leg carries non-LTC signal: released after a second, not before
-  for (int k = 0; k < 90; k++) r.update(false, false, true, true, bs);
-  CHECK(r.latch() == 1, "0.9 s of unknown signal: still latched");
-  for (int k = 0; k < 20; k++) r.update(false, false, true, true, bs);
-  CHECK(r.latch() == -1, "1.1 s of unknown signal: released");
-  r.update(true, false, true, true, bs); CHECK(r.latch() == 0, "lock on left");
-  r.update(true, true, true, true, bs); CHECK(r.latch() == -1, "LTC on both legs: pass-through");
+  // no lock for as long as it likes (stopped, paused, a fade, another file): the latch stays
+  for (int k = 0; k < 6000; k++) r.update(false, false);
+  r.render(a.data(), b.data(), oa.data(), ob.data(), n);
+  CHECK(r.latch() == 1 && ob == a, "a minute without lock keeps the latch and the mute");
+  r.update(true, false); CHECK(r.latch() == 0, "lock on left moves it");
+  r.update(true, true); CHECK(r.latch() == -1, "LTC on both legs: pass-through");
   Router q; q.setSampleRate(48000); q.setLatch(1); q.render(a.data(), b.data(), oa.data(), ob.data(), n);
   CHECK(oa == a && ob == a, "restored latch mutes from the first sample");
 }
