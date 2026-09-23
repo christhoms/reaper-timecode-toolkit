@@ -467,6 +467,21 @@ inline void save_latency_unit(int unit) {
   }
 }
 
+// ---- output rate: 0 follows the source; 1..4 = 24, 25, 29.97 DF, 30 ----------------------------------------------
+struct OutRate { int fps; bool df; double clock; int type; };
+inline bool out_rate(int sel, OutRate &r) {
+  static const OutRate k[4] = {{24, false, 24.0, 0}, {25, false, 25.0, 1}, {30, true, 30000.0 / 1001.0, 2}, {30, false, 30.0, 3}};
+  if (sel < 1 || sel > 4) return false;
+  r = k[sel - 1];
+  return true;
+}
+// timecode seconds per frame count: DF labels follow the clock, NDF labels count their nominal rate
+inline double clock_rate(int fps, bool df) { return fps == 30 && df ? 30000.0 / 1001.0 : double(fps); }
+// the output frame running at the start of source frame 'count'
+inline long convert_count(long count, int fps, bool df, const OutRate &o) {
+  return long(std::floor(double(count) / clock_rate(fps, df) * o.clock + 1e-6)) % frames_per_day(o.fps, o.df);
+}
+
 // ---- Art-Net sender --------------------------------------------------------------------------------------
 // Sends frame k at E + k * duration, E = upper envelope of (observed time - k * duration). Hosts that render ahead
 // deliver frames early and in bursts; packets still leave evenly and never ahead of the decoder.
@@ -532,9 +547,35 @@ class Sender {
     return (count + tc_to_count(t.h, t.m, t.s, std::min(t.f, fps - 1), fps, df)) % frames_per_day(fps, df);
   }
 
-  // any source: frame 'count' starts at wall-clock time t and lasts 'dur' seconds
+  void setOutputRate(int sel) { outRate_.store(sel < 0 || sel > 4 ? 0 : sel, std::memory_order_relaxed); }
+  int outputRate() const { return outRate_.load(std::memory_order_relaxed); }
+
+  // any source: frame 'count' starts at wall-clock time t and lasts 'dur' seconds. With an output rate set, the output
+  // frames that start inside it are queued at their own times; the timecode value follows the source.
   void observeAt(long count, int fps, bool df, int type, double dur, double t) {
-    count = withOffset(count, fps, df);
+    OutRate o;
+    if (!out_rate(outputRate(), o)) {
+      convSrc_ = -1;
+      push(withOffset(count, fps, df), fps, df, type, dur, t);
+      return;
+    }
+    const double cr = clock_rate(fps, df), S = double(count) / cr, realPerSec = dur * cr;
+    const bool cont = convSrc_ >= 0 && count == convSrc_ + 1 && fps == convFps_ && df == convDf_ && convSel_ == outputRate();
+    const long first = long(std::ceil(S * o.clock - 1e-6)), hi = long(std::ceil((S + 1.0 / cr) * o.clock - 1e-6)) - 1;
+    long k = first;
+    if (!cont) k = long(std::floor(S * o.clock + 1e-6));  // start, relocate, rate change: the running output frame goes out at once
+    else if (k <= convLast_) k = convLast_ + 1;
+    const long day = frames_per_day(o.fps, o.df);
+    for (; k <= hi; k++) {
+      const double tk = t + std::max(0.0, double(k) / o.clock - S) * realPerSec;
+      push(withOffset(k % day, o.fps, o.df), o.fps, o.df, o.type, realPerSec / o.clock, tk);
+      convLast_ = k;
+    }
+    convSrc_ = count; convFps_ = fps; convDf_ = df; convSel_ = outputRate();
+  }
+
+ private:
+  void push(long count, int fps, bool df, int type, double dur, double t) {
     const uint32_t w = wr_.load(std::memory_order_relaxed);
     const uint32_t next = (w + 1) % kRing;
     if (next == rd_.load(std::memory_order_acquire)) return;  // full: drop
@@ -547,6 +588,8 @@ class Sender {
     o.t = t;
     wr_.store(next, std::memory_order_release);
   }
+
+ public:
 
   uint64_t sent() const { return sent_.load(std::memory_order_relaxed); }
   bool failed() const { return failed_.load(std::memory_order_relaxed); }  // last packet was refused by the OS
@@ -669,6 +712,10 @@ class Sender {
   bool contending_ = false;
   std::atomic<double> latencyMs_{0.0};
   std::atomic<uint32_t> offset_{0};  // on<<31 | h<<24 | m<<16 | s<<8 | f
+  std::atomic<int> outRate_{0};
+  long convSrc_ = -1, convLast_ = -1;  // audio thread: last source frame and last output frame queued
+  int convFps_ = 0, convSel_ = 0;
+  bool convDf_ = false;
   int fps_ = 30, type_ = 3;
   bool df_ = false;
   double dur_ = 1.0 / 30.0;

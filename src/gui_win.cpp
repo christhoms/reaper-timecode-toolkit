@@ -43,6 +43,7 @@ RECT mute_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 72, 92, 24);
 RECT bcast_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 6, 92, 24); }
 RECT ifpick_rect(const Gui &g) { return g.rc(84, kBarY + 6, kGuiW - 12 - 92 - 8 - 84, 24); }
 RECT excl_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 39, 92, 24); }
+RECT rate_rect(const Gui &g) { return g.rc(236, kBarY + 105, 88, 24); }
 RECT offset_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 105, 92, 24); }
 RECT unit_rect(const Gui &g, int i) { return g.rc(184 + i * 27, kBarY + 39, 26, 24); }
 RECT step_rect(const Gui &g, int dir) { return g.rc(160, kBarY + (dir > 0 ? 39 : 51), 18, 12); }
@@ -109,6 +110,17 @@ void pick_interface(Gui &g) {  // a popup menu of the interfaces that are up
   const int pick = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, g.hwnd, nullptr);
   DestroyMenu(m);
   if (pick > 0 && size_t(pick) <= ifs.size()) g.plug->setInterface(ifs[pick - 1].addr);
+}
+
+void pick_rate(Gui &g) {
+  HMENU m = CreatePopupMenu();
+  for (int i = 0; i < 5; i++) AppendMenuA(m, MF_STRING | (i == g.plug->sender.outputRate() ? MF_CHECKED : 0), UINT_PTR(i + 1), S::rateNames[i]);
+  RECT r = rate_rect(g);
+  POINT pt{r.left, r.bottom};
+  ClientToScreen(g.hwnd, &pt);
+  const int pick = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, g.hwnd, nullptr);
+  DestroyMenu(m);
+  if (pick > 0) g.plug->setRateFromGui(pick - 1);
 }
 
 LRESULT CALLBACK edit_proc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR ref) {
@@ -182,6 +194,10 @@ void paint(Gui &g, HDC dc) {
   const bool mute = g.plug->muteLtc.load() != 0;
   fill(dc, mute_rect(g), mute ? kSel : kField);
   text(dc, g.fUi, mute ? kText : kDim, S::muteLtc, mute_rect(g), DT_CENTER | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::rateLabel, g.rc(202, kBarY + 106, 34, 22), DT_LEFT | DT_VCENTER);
+  const int rsel = g.plug->sender.outputRate();
+  fill(dc, rate_rect(g), kField);
+  text(dc, g.fUi, rsel ? kText : kDim, S::rateNames[rsel], rate_rect(g), DT_CENTER | DT_VCENTER);
   const bool offOn = g.plug->sender.offsetOn();
   fill(dc, g.rc(84, kBarY + 105, 110, 24), kField);
   fill(dc, offset_rect(g), offOn ? kSel : kField);
@@ -232,6 +248,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       for (int i = 0; i < 2; i++) { const RECT r = unit_rect(*g, i); if (PtInRect(&r, p)) { g->plug->setLatencyUnitFromGui(i); show_latency(*g); } }
       { const RECT r = bcast_rect(*g); if (PtInRect(&r, p)) { g->plug->setBroadcast(!g->plug->broadcast); ShowWindow(g->ip, g->plug->broadcast ? SW_HIDE : SW_SHOW); } }
       { const RECT r = ifpick_rect(*g); if (g->plug->broadcast && PtInRect(&r, p)) pick_interface(*g); }
+      { const RECT r = rate_rect(*g); if (PtInRect(&r, p)) pick_rate(*g); }
       { const RECT r = offset_rect(*g); if (PtInRect(&r, p)) g->plug->setOffsetFromGui(!g->plug->sender.offsetOn()); }
       { const RECT r = excl_rect(*g); if (PtInRect(&r, p)) g->plug->setExclusiveFromGui(!g->plug->sender.exclusive()); }
       for (int dir : {1, -1}) {

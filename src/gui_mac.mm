@@ -18,6 +18,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   NSSegmentedControl *_exclSeg;
   NSTextField *_offsetField;
   NSSegmentedControl *_offsetSeg;
+  NSPopUpButton *_ratePicker;
   NSFont *_fTc, *_fUi;      // looked up once: a lookup that fails mid-session must not reach the draw path
   NSArray<NSColor *> *_colors;  // indexed by UiColor
   int _tickCount;
@@ -153,6 +154,14 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   [_offsetSeg setSelected:plug->sender.offsetOn() forSegment:0];
   [self addSubview:_offsetSeg];
   [self showOffsetState];
+  _ratePicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(236, kH - kBar + 105, 88, 24) pullsDown:NO];
+  _ratePicker.controlSize = NSControlSizeSmall;
+  _ratePicker.font = [NSFont systemFontOfSize:11];
+  for (int i = 0; i < 5; i++) [_ratePicker addItemWithTitle:@(S::rateNames[i])];
+  [_ratePicker selectItemAtIndex:plug->sender.outputRate()];
+  _ratePicker.target = self;
+  _ratePicker.action = @selector(ratePicked:);
+  [self addSubview:_ratePicker];
 
   _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
   [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
@@ -225,6 +234,10 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   }
 }
 
+- (void)ratePicked:(id)sender {
+  if (_plug) _plug->setRateFromGui((int)_ratePicker.indexOfSelectedItem);
+}
+
 - (void)offsetChanged:(id)sender {
   if (_plug) _plug->setOffsetFromGui([_offsetSeg isSelectedForSegment:0]);
 }
@@ -249,6 +262,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     if ([_muteSeg isSelectedForSegment:0] != (_plug->muteLtc.load() != 0)) [_muteSeg setSelected:_plug->muteLtc.load() != 0 forSegment:0];
     if ([_exclSeg isSelectedForSegment:0] != _plug->sender.exclusive()) [_exclSeg setSelected:_plug->sender.exclusive() forSegment:0];
     [self showOffsetState];
+    if (_ratePicker.indexOfSelectedItem != _plug->sender.outputRate()) [_ratePicker selectItemAtIndex:_plug->sender.outputRate()];
     if ((_tickCount++ % 30) == 0) _plug->refreshProject();  // project frame rate / start offset, once a second
     if (_plug->latencyShown() != _latShown && _latField.currentEditor == nil) [self showLatency];
   }
@@ -333,6 +347,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     [self draw:S::artnetTo at:NSMakePoint(12, kH - kBar + 10) color:kUiDim rightAligned:NO];
     [self draw:S::latency at:NSMakePoint(12, kH - kBar + 43) color:kUiDim rightAligned:NO];
     [self draw:S::source at:NSMakePoint(12, kH - kBar + 77) color:kUiDim rightAligned:NO];
+    [self draw:S::rateLabel at:NSMakePoint(202, kH - kBar + 110) color:kUiDim rightAligned:NO];
     [self draw:u.latencyNote.c_str() at:NSMakePoint(248, kH - kBar + 43) color:kUiDim rightAligned:NO];
   } @catch (NSException *e) {
     NSLog(@"Reaper Timecode Toolkit: draw failed: %@", e);

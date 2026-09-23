@@ -18,6 +18,7 @@ CLAP plugin - generates Artnet Timecode either from LTC audio or DAW time.
 | Mute LTC | on | per project |
 | Exclusive | on | per project |
 | Offset (HH:MM:SS:FF) | off | per project |
+| Rate: Auto, 24, 25, 29.97 DF, 30 | Auto | per project |
 
 Exclusive: only the instance that started last sends.
 

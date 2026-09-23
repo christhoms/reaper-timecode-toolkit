@@ -474,6 +474,29 @@ static void test_sender(Listener &L) {
     s.setOffset(0, 0, 0, 29, true);
     CHECK(count_to_tc(s.withOffset(0, 24, false), 24, false).f == 23, "offset frames clamp to the running rate (29 -> 23 at 24 fps)");
   }
+  {  // output rate: the value follows the source, frames go out at the output rate
+    OutRate o30, odf, o25;
+    out_rate(4, o30); out_rate(3, odf); out_rate(2, o25);
+    Timecode t = count_to_tc(convert_count(tc_to_count(1, 0, 0, 0, 25, false), 25, false, odf), 30, true);
+    CHECK(t.h == 1 && t.m == 0 && t.s == 0 && t.f == 0, "25 to 29.97 DF at 01:00:00:00 -> %02d:%02d:%02d;%02d", t.h, t.m, t.s, t.f);
+    t = count_to_tc(convert_count(tc_to_count(2, 10, 30, 12, 25, false), 25, false, o30), 30, false);
+    CHECK(t.h == 2 && t.m == 10 && t.s == 30 && t.f == 14, "25 to 30 at 02:10:30:12 -> %02d:%02d:%02d:%02d", t.h, t.m, t.s, t.f);
+    t = count_to_tc(convert_count(tc_to_count(2, 10, 30, 29, 30, false), 30, false, o25), 25, false);
+    CHECK(t.h == 2 && t.m == 10 && t.s == 30 && t.f == 24, "30 to 25 at 02:10:30:29 -> %02d:%02d:%02d:%02d", t.h, t.m, t.s, t.f);
+    for (int sel : {4, 2}) {  // 25 in, 30 out; 30 in, 25 out
+      L.clear();
+      Sender s; s.setTarget("127.0.0.1"); s.setOutputRate(sel); s.start();
+      const int in = sel == 4 ? 25 : 30, out = sel == 4 ? 30 : 25;
+      const long c0 = tc_to_count(10, 0, 0, 0, in, false); const double t0 = now_s() + 0.05;
+      for (int k = 0; k < in * 2; k++) { punctual_until(t0 + k / double(in)); s.observeAt(c0 + k, in, false, in == 25 ? 1 : 3, 1.0 / in, now_s()); }
+      std::this_thread::sleep_for(std::chrono::milliseconds(150));
+      s.stop();
+      char name[32]; std::snprintf(name, sizeof(name), "%d in, %d out", in, out);
+      check_packets(L, name, out, false, 1.0 / out, tc_to_count(10, 0, 0, 0, out, false), size_t(out * 2 - 4));
+      std::lock_guard<std::mutex> g(L.mu);
+      CHECK(!L.pk.empty() && L.pk.back().second[18] == (out == 25 ? 1 : 3), "%s: Art-Net type", name);
+    }
+  }
   {  // exclusive: the latest start sends alone; a sender with Exclusive off is silenced too; the token returns 2 s after a stop
     L.clear();
     Sender a, b, open;  // a at 01h, b at 02h, open (Exclusive off) at 03h
@@ -589,7 +612,7 @@ static void test_plugin(const char *path, Listener &L) {
     static std::vector<unsigned char> blob; static size_t rpos; blob.clear(); rpos = 0;
     clap_ostream_t os{nullptr, [](const clap_ostream_t *, const void *d, uint64_t n) -> int64_t { blob.insert(blob.end(), (const unsigned char *)d, (const unsigned char *)d + n); return (int64_t)n; }};
     clap_istream_t is{nullptr, [](const clap_istream_t *, void *d, uint64_t n) -> int64_t { size_t k = std::min<size_t>(n, blob.size() - rpos); std::memcpy(d, blob.data() + rpos, k); rpos += k; return (int64_t)k; }};
-    CHECK(state && state->save(p, &os) && blob.size() == 16 && blob[4] == 6 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1 && blob[10] == 1 && blob[11] == 0, "state save (v6: latch right, auto, LTC seen, coast 30, mute on, exclusive on, offset off)");
+    CHECK(state && state->save(p, &os) && blob.size() == 17 && blob[4] == 7 && blob[5] == 2 && blob[6] == 0 && blob[7] == 1 && blob[8] == 30 && blob[9] == 1 && blob[10] == 1 && blob[11] == 0 && blob[16] == 0, "state save (v7: latch right, auto, LTC seen, coast 30, mute on, exclusive on, offset off, rate auto)");
     const clap_plugin_t *p2 = fac->create_plugin(fac, &host, desc->id);
     p2->init(p2); 
     auto *state2 = (const clap_plugin_state_t *)p2->get_extension(p2, CLAP_EXT_STATE);
@@ -604,7 +627,7 @@ static void test_plugin(const char *path, Listener &L) {
   {  // the Offset parameter through the CLAP interface
     auto *params = (const clap_plugin_params_t *)p->get_extension(p, CLAP_EXT_PARAMS);
     clap_param_info_t pi; double v = 99; char txt[64] = {0};
-    CHECK(params && params->count(p) == 6 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
+    CHECK(params && params->count(p) == 7 && params->get_info(p, 0, &pi) && pi.min_value == -500 && pi.max_value == 500, "params: info");
     CHECK(params->get_value(p, pi.id, &v) && v == 0.0, "params: default 0 (got %.2f)", v);
     static clap_event_param_value_t ev; std::memset(&ev, 0, sizeof(ev));
     ev.header.size = sizeof(ev); ev.header.type = CLAP_EVENT_PARAM_VALUE; ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID; ev.param_id = pi.id; ev.value = -37.5;
@@ -627,7 +650,7 @@ static void test_plugin(const char *path, Listener &L) {
       ((const clap_plugin_params_t *)pl->get_extension(pl, CLAP_EXT_PARAMS))->flush(pl, &ie, &oe);
     };
     clap_param_info_t pi2; char txt[64] = {0};
-    CHECK(params->count(p) == 6 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
+    CHECK(params->count(p) == 7 && params->get_info(p, 1, &pi2) && pi2.id == 2 && (pi2.flags & CLAP_PARAM_IS_STEPPED) && params->value_to_text(p, 2, 1, txt, sizeof(txt)) && !std::strcmp(txt, "LTC only"), "Source parameter");
 
     // run 'seconds' of real-time blocks on plugin pl. ltcFrom/ltcTo: when the right leg carries LTC. pos0: playhead start
     auto run = [&](const clap_plugin_t *pl, double seconds, double pos0, double ltcFrom, double ltcTo, LtcGen *g) {

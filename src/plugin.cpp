@@ -78,7 +78,7 @@ void plug_reset(const clap_plugin_t *p) {
 }
 
 // ---- parameters --------------------------------------------------------------------------------------
-constexpr clap_id kParamLatency = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4, kParamExclusive = 5, kParamOffset = 6;
+constexpr clap_id kParamLatency = 1, kParamSource = 2, kParamCoast = 3, kParamMute = 4, kParamExclusive = 5, kParamOffset = 6, kParamRate = 7;
 
 // host -> plugin value events, and (after a GUI edit) plugin -> host
 void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_events_t *out) {
@@ -90,6 +90,7 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
     if (ev->param_id == kParamSource) { s->mode.store(std::min(2, std::max(0, int(std::lround(ev->value)))), std::memory_order_relaxed); continue; }
     if (ev->param_id == kParamMute) { s->muteLtc.store(ev->value >= 0.5 ? 1 : 0, std::memory_order_relaxed); continue; }
     if (ev->param_id == kParamExclusive) { s->sender.setExclusive(ev->value >= 0.5); continue; }
+    if (ev->param_id == kParamRate) { s->sender.setOutputRate(std::min(4, std::max(0, int(std::lround(ev->value))))); continue; }
     if (ev->param_id == kParamOffset) { const ctltc::Timecode o = s->sender.offset(); s->sender.setOffset(o.h, o.m, o.s, o.f, ev->value >= 0.5); continue; }
     if (ev->param_id == kParamCoast) { s->coastLimit.store(ctltc::clamp_coast(ev->value), std::memory_order_relaxed); continue; }
     if (ev->param_id != kParamLatency) continue;
@@ -113,10 +114,11 @@ void param_events(Plugin *s, const clap_input_events_t *in, const clap_output_ev
   tell(s->muteFromGui, kParamMute, s->muteLtc.load(std::memory_order_relaxed));
   tell(s->modeFromGui, kParamSource, s->mode.load(std::memory_order_relaxed));
   tell(s->exclusiveFromGui, kParamExclusive, s->sender.exclusive() ? 1 : 0);
+  tell(s->rateFromGui, kParamRate, s->sender.outputRate());
   tell(s->offsetFromGui, kParamOffset, s->sender.offsetOn() ? 1 : 0);
 }
 
-uint32_t params_count(const clap_plugin_t *) { return 6; }
+uint32_t params_count(const clap_plugin_t *) { return 7; }
 bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *info) {
   if (index == 1) {
     std::memset(info, 0, sizeof(*info));
@@ -132,6 +134,14 @@ bool params_get_info(const clap_plugin_t *, uint32_t index, clap_param_info_t *i
     info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
     std::snprintf(info->name, sizeof(info->name), "%s", S::paramMute);
     info->min_value = 0; info->max_value = 1; info->default_value = 1;
+    return true;
+  }
+  if (index == 6) {
+    std::memset(info, 0, sizeof(*info));
+    info->id = kParamRate;
+    info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_ENUM;
+    std::snprintf(info->name, sizeof(info->name), "%s", S::paramRate);
+    info->min_value = 0; info->max_value = 4; info->default_value = 0;
     return true;
   }
   if (index == 5) {
@@ -175,11 +185,13 @@ bool params_get_value(const clap_plugin_t *p, clap_id id, double *v) {
   if (id == kParamMute) { *v = P(p)->muteLtc.load(); return true; }
   if (id == kParamExclusive) { *v = P(p)->sender.exclusive() ? 1 : 0; return true; }
   if (id == kParamOffset) { *v = P(p)->sender.offsetOn() ? 1 : 0; return true; }
+  if (id == kParamRate) { *v = P(p)->sender.outputRate(); return true; }
   if (id != kParamLatency) return false;
   *v = P(p)->sender.latencyMs();
   return true;
 }
 bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf, uint32_t size) {
+  if (id == kParamRate) { std::snprintf(buf, size, "%s", S::rateNames[std::min(4, std::max(0, int(std::lround(v))))]); return true; }
   if (id == kParamSource) { std::snprintf(buf, size, "%s", kSourceNames[std::min(2, std::max(0, int(std::lround(v))))]); return true; }
   if (id == kParamMute || id == kParamExclusive || id == kParamOffset) { std::snprintf(buf, size, "%s", v >= 0.5 ? S::on : S::off); return true; }
   if (id == kParamCoast) {
@@ -193,6 +205,11 @@ bool params_value_to_text(const clap_plugin_t *, clap_id id, double v, char *buf
   return true;
 }
 bool params_text_to_value(const clap_plugin_t *, clap_id id, const char *txt, double *v) {
+  if (id == kParamRate && txt) {
+    for (int i = 0; i < 5; i++) if (!std::strcmp(txt, S::rateNames[i])) { *v = i; return true; }
+    *v = std::min(4, std::max(0, std::atoi(txt)));
+    return true;
+  }
   if (id == kParamSource && txt) {
     for (int i = 0; i < 3; i++) if (!std::strcmp(txt, kSourceNames[i])) { *v = i; return true; }
     *v = std::min(2, std::max(0, std::atoi(txt)));
@@ -273,13 +290,23 @@ clap_process_status plug_process(const clap_plugin_t *p, const clap_process_t *p
     s->frameDur.store(dur, std::memory_order_relaxed);
     s->dispSource.store(src, std::memory_order_relaxed);
   };
+  // what leaves: the output frame (rate converted, offset applied) for source frame 'count'
+  auto showCount = [&](long count, int fps, bool df, bool is2997, double dur, double t, int src) {
+    ctltc::OutRate o;
+    if (ctltc::out_rate(s->sender.outputRate(), o)) {
+      dur *= ctltc::clock_rate(fps, df) / o.clock;
+      count = ctltc::convert_count(count, fps, df, o);
+      fps = o.fps; df = o.df; is2997 = o.df;
+    }
+    show(ctltc::count_to_tc(s->sender.withOffset(count, fps, df), fps, df), fps, df, is2997, dur, t, src);
+  };
 
   if (useDaw) {
     const ctltc::DawRate r = ctltc::daw_rate(s->projFps.load(std::memory_order_relaxed), s->projDrop.load(std::memory_order_relaxed));
     const double pos = double(tr->song_pos_seconds) / double(CLAP_SECTIME_FACTOR) + s->projOffset.load(std::memory_order_relaxed);
     s->dawClock.block(pos, n, s->srate, t0, r, [&](long count, double t, double dur) {
       s->sender.observeAt(count, r.fps, r.df, r.type(), dur, t);
-      show(ctltc::count_to_tc(s->sender.withOffset(count, r.fps, r.df), r.fps, r.df), r.fps, r.df, r.fps == 30 && r.real < 29.985, dur, t, 2);
+      showCount(count, r.fps, r.df, r.fps == 30 && r.real < 29.985, dur, t, 2);
     });
   } else {
     s->dawClock.stop();
@@ -288,9 +315,8 @@ clap_process_status plug_process(const clap_plugin_t *p, const clap_process_t *p
         const ctltc::Frame &fr = ltc[i].fr;
         s->sender.observe(fr, ltc[i].t);
         // show what is being SENT: LTC names the frame that just ended, the current frame is that + 1
-        show(ctltc::count_to_tc(s->sender.withOffset((ctltc::tc_to_count(fr.h, fr.m, fr.s, fr.f, fr.fps, fr.df) + 1) % ctltc::frames_per_day(fr.fps, fr.df), fr.fps, fr.df), fr.fps, fr.df),
-             fr.fps, fr.df, fr.is2997(),
-             fr.duration(), ltc[i].t, 1);
+        showCount((ctltc::tc_to_count(fr.h, fr.m, fr.s, fr.f, fr.fps, fr.df) + 1) % ctltc::frames_per_day(fr.fps, fr.df), fr.fps, fr.df,
+                  fr.is2997(), fr.duration(), ltc[i].t, 1);
         s->dispCoasted.store(ltc[i].synth ? s->coast[s->activeCh].coasted() : 0, std::memory_order_relaxed);
         s->dispFilled.store(s->coast[s->activeCh].filled(), std::memory_order_relaxed);
       }
@@ -360,18 +386,19 @@ const clap_plugin_gui_t kGui = {gui_is_api_supported, gui_get_preferred_api, gui
 
 // state: only the one-sided latch, so a reloaded project mutes the LTC leg from the first sample
 // v2 = v1 + source mode + what the instance knows about LTC on its input (see SourceSelect); v3 = v2 + coast limit; v4 = v3 + mute LTC;
-// v5 = v4 + exclusive; v6 = v5 + offset (on, h, m, s, f)
-constexpr int kStateSize[] = {0, 6, 8, 9, 10, 11, 16};  // bytes per version
+// v5 = v4 + exclusive; v6 = v5 + offset (on, h, m, s, f); v7 = v6 + output rate
+constexpr int kStateSize[] = {0, 6, 8, 9, 10, 11, 16, 17};  // bytes per version
 bool state_save(const clap_plugin_t *p, const clap_ostream_t *st) {
   const ctltc::Timecode o = P(p)->sender.offset();
-  const unsigned char b[16] = {'C', 'T', 'L', 'A', 6, (unsigned char)(P(p)->latchDisp.load() + 1), (unsigned char)P(p)->mode.load(),
+  const unsigned char b[17] = {'C', 'T', 'L', 'A', 7, (unsigned char)(P(p)->latchDisp.load() + 1), (unsigned char)P(p)->mode.load(),
                               (unsigned char)P(p)->knowledgeDisp.load(), (unsigned char)P(p)->coastLimit.load(), (unsigned char)P(p)->muteLtc.load(),
                               (unsigned char)(P(p)->sender.exclusive() ? 1 : 0), (unsigned char)(P(p)->sender.offsetOn() ? 1 : 0),
-                              (unsigned char)o.h, (unsigned char)o.m, (unsigned char)o.s, (unsigned char)o.f};
+                              (unsigned char)o.h, (unsigned char)o.m, (unsigned char)o.s, (unsigned char)o.f,
+                              (unsigned char)P(p)->sender.outputRate()};
   return st->write(st, b, sizeof(b)) == (int64_t)sizeof(b);
 }
 bool state_load(const clap_plugin_t *p, const clap_istream_t *st) {
-  unsigned char b[16] = {0};
+  unsigned char b[17] = {0};
   int64_t got = 0;
   while (got < (int64_t)sizeof(b)) {
     const int64_t r = st->read(st, b + got, sizeof(b) - got);
@@ -379,12 +406,14 @@ bool state_load(const clap_plugin_t *p, const clap_istream_t *st) {
     got += r;
   }
   const int ver = b[4];
-  if (got < 6 || std::memcmp(b, "CTLA", 4) || b[5] > 2 || ver < 1 || ver > 6) return false;
+  if (got < 6 || std::memcmp(b, "CTLA", 4) || b[5] > 2 || ver < 1 || ver > 7) return false;
   if (ver == 1 ? got < kStateSize[1] : got != kStateSize[ver]) return false;
-  const bool v2 = ver == 2, v3 = ver >= 3, v4 = ver >= 4, v5 = ver >= 5, v6 = ver >= 6;
+  const bool v2 = ver == 2, v3 = ver >= 3, v4 = ver >= 4, v5 = ver >= 5, v6 = ver >= 6, v7 = ver >= 7;
   if (ver >= 2 && (b[6] > 2 || b[7] > 2)) return false;
   if ((v3 && b[8] > ctltc::kCoastMax) || (v4 && b[9] > 1) || (v5 && b[10] > 1)) return false;
   if (v6 && (b[11] > 1 || b[12] > 23 || b[13] > 59 || b[14] > 59 || b[15] > 59)) return false;
+  if (v7 && b[16] > 4) return false;
+  if (v7) P(p)->sender.setOutputRate(b[16]);
   if (v6) P(p)->sender.setOffset(b[12], b[13], b[14], b[15], b[11] != 0);
   if (v5) P(p)->sender.setExclusive(b[10] != 0);
   if (v4) P(p)->muteLtc.store(b[9], std::memory_order_relaxed);

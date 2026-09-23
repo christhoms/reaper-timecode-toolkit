@@ -43,6 +43,7 @@ struct Plugin {
   std::atomic<int> muteLtc{1};                 // parameter "Mute LTC"
   std::atomic<bool> muteFromGui{false};
   std::atomic<bool> exclusiveFromGui{false};   // parameter "Exclusive": the value lives in the sender
+  std::atomic<bool> rateFromGui{false};        // parameter "Rate": the value lives in the sender
   std::atomic<bool> offsetFromGui{false};      // parameter "Offset" (on / off); the timecode itself is project state in the sender
   bool wasPlaying = false;
   // REAPER project settings, read on the main thread through REAPER's API (other hosts: 30 fps, no offset)
@@ -70,6 +71,12 @@ struct Plugin {
   void setExclusiveFromGui(bool on) {
     sender.setExclusive(on);
     exclusiveFromGui.store(true, std::memory_order_relaxed);
+    if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
+  }
+
+  void setRateFromGui(int sel) {
+    sender.setOutputRate(sel);
+    rateFromGui.store(true, std::memory_order_relaxed);
     if (hostParams && hostParams->request_flush) hostParams->request_flush(host);
   }
 
