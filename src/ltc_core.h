@@ -690,9 +690,9 @@ class Sender {
           kNext++;
           continue;
         }
-        wait_until_s(std::min(T, now + 0.002));  // wake at the deadline; look at the ring every 2 ms meanwhile
+        wait_until_s(std::min(T, now + 0.001));  // wake at the deadline; look at the ring every 1 ms meanwhile
       } else {
-        wait_until_s(now + 0.002);  // also when idle: the first frame after a start must not wait for a slow poll
+        wait_until_s(now + 0.001);  // also when idle: the first frame after a start must not wait for a slow poll
       }
     }
   }
