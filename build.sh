@@ -2,11 +2,16 @@
 # ./build.sh          macOS plugin
 # ./build.sh install  ... copied to ~/Library/Audio/Plug-Ins/CLAP
 # ./build.sh win      Windows x64 plugin (cross-compiled, mingw-w64)
-# ./build.sh dist     both, plus installers in dist/ (pkgbuild, makensis; makensis 3.12 needs a UTF-8 locale)
+# ./build.sh dist     both, plus installers in dist/ (pkgbuild, makensis; makensis 3.12 needs a UTF-8 locale).
+#                     The .pkg is Developer ID signed and notarized: needs both Developer ID certs in the keychain and
+#                     a notarytool profile (xcrun notarytool store-credentials "$NOTARY_PROFILE" --apple-id ... --team-id SWS95WXK99)
 set -e
 cd "$(dirname "$0")"
 V=$(sed -n 's/#define RTT_VERSION "\(.*\)"/\1/p' src/plugin.h)
 INC="-I src -I third_party/clap/include"
+SIGN_APP="${SIGN_APP:-Developer ID Application: Christopher Thoms (SWS95WXK99)}"
+SIGN_PKG="${SIGN_PKG:-Developer ID Installer: Christopher Thoms (SWS95WXK99)}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-capture-ndi-region}"
 
 mac() {
   B=build/mac/ReaperTimecodeToolkit.clap/Contents
@@ -32,12 +37,21 @@ case "$1" in
   win) win ;;
   dist)
     mac; win
+    security find-identity -v | grep -q "$SIGN_APP" || { echo "missing: $SIGN_APP"; exit 1; }
+    security find-identity -v | grep -q "$SIGN_PKG" || { echo "missing: $SIGN_PKG"; exit 1; }
+    xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null || { echo "missing notarytool profile: $NOTARY_PROFILE"; exit 1; }
+    codesign --force --options runtime --timestamp -s "$SIGN_APP" build/mac/ReaperTimecodeToolkit.clap
+    codesign --verify --strict --verbose=2 build/mac/ReaperTimecodeToolkit.clap
     rm -rf dist build/pkgroot && mkdir -p dist "build/pkgroot/Library/Audio/Plug-Ins/CLAP"
     cp -R build/mac/ReaperTimecodeToolkit.clap "build/pkgroot/Library/Audio/Plug-Ins/CLAP/"
     pkgbuild --analyze --root build/pkgroot build/component.plist >/dev/null
     plutil -replace 0.BundleIsRelocatable -bool NO build/component.plist  # else an existing copy elsewhere gets updated instead
+    P="dist/ReaperTimecodeToolkit-$V-mac.pkg"
     pkgbuild --root build/pkgroot --component-plist build/component.plist --identifier uk.co.christhoms.reaper-timecode-toolkit --version "$V" --install-location / \
-      "dist/ReaperTimecodeToolkit-$V-mac.pkg"
+      --sign "$SIGN_PKG" --timestamp "$P"
+    xcrun notarytool submit "$P" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$P"
+    spctl -a -vv -t install "$P"
     LC_ALL=en_US.UTF-8 makensis -V2 -DVERSION="$V" -DOUT="$PWD/dist/ReaperTimecodeToolkit-$V-win64-setup.exe" -DSRC="$PWD/build/win" installer/win.nsi
     ls -l dist ;;
   install)

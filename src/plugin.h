@@ -6,7 +6,7 @@
 #include "ltc_core.h"
 #include "strings.h"
 
-#define RTT_VERSION "2.0.1"
+#define RTT_VERSION "2.1.0"
 
 struct Plugin {
   clap_plugin_t plugin;
