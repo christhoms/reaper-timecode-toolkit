@@ -2,8 +2,9 @@
 # ./build.sh          macOS plugin and receiver app
 # ./build.sh install  ... copied to ~/Library/Audio/Plug-Ins/CLAP
 # ./build.sh win      Windows x64 plugin and receiver (cross-compiled, mingw-w64)
-# ./build.sh dist     both, plus installers in dist/ (pkgbuild, makensis; makensis 3.12 needs a UTF-8 locale).
-#                     The .pkg is Developer ID signed and notarized: needs both Developer ID certs in the keychain and
+# ./build.sh dist     both, plus installers in dist/ (pkgbuild, makensis; makensis 3.12 needs a UTF-8 locale):
+#                     the receiver on its own, and the toolkit with the receiver as an option.
+#                     The .pkg files are Developer ID signed and notarized: needs both Developer ID certs in the keychain and
 #                     a notarytool profile (xcrun notarytool store-credentials "$NOTARY_PROFILE" --apple-id ... --team-id SWS95WXK99)
 set -e
 cd "$(dirname "$0")"
@@ -50,23 +51,35 @@ case "$1" in
     security find-identity -v | grep -q "$SIGN_APP" || { echo "missing: $SIGN_APP"; exit 1; }
     security find-identity -v | grep -q "$SIGN_PKG" || { echo "missing: $SIGN_PKG"; exit 1; }
     xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null || { echo "missing notarytool profile: $NOTARY_PROFILE"; exit 1; }
-    codesign --force --options runtime --timestamp -s "$SIGN_APP" build/mac/ReaperTimecodeToolkit.clap
-    codesign --verify --strict --verbose=2 build/mac/ReaperTimecodeToolkit.clap
-    codesign --force --options runtime --timestamp -s "$SIGN_APP" "build/mac/Art-Net Timecode Receiver.app"
-    codesign --verify --strict --verbose=2 "build/mac/Art-Net Timecode Receiver.app"
-    rm -rf dist build/pkgroot && mkdir -p dist "build/pkgroot/Library/Audio/Plug-Ins/CLAP" build/pkgroot/Applications
-    cp -R build/mac/ReaperTimecodeToolkit.clap "build/pkgroot/Library/Audio/Plug-Ins/CLAP/"
-    cp -R "build/mac/Art-Net Timecode Receiver.app" build/pkgroot/Applications/
-    pkgbuild --analyze --root build/pkgroot build/component.plist >/dev/null
-    plutil -replace 0.BundleIsRelocatable -bool NO build/component.plist  # else an existing copy elsewhere gets updated instead
-    plutil -replace 1.BundleIsRelocatable -bool NO build/component.plist
+    for b in build/mac/ReaperTimecodeToolkit.clap "build/mac/Art-Net Timecode Receiver.app"; do
+      codesign --force --options runtime --timestamp -s "$SIGN_APP" "$b"
+      codesign --verify --strict --verbose=2 "$b"
+    done
+    rm -rf dist build/root-plugin build/root-receiver build/pkg && mkdir -p dist build/pkg "build/root-plugin/Library/Audio/Plug-Ins/CLAP" build/root-receiver/Applications
+    cp -R build/mac/ReaperTimecodeToolkit.clap "build/root-plugin/Library/Audio/Plug-Ins/CLAP/"
+    cp -R "build/mac/Art-Net Timecode Receiver.app" build/root-receiver/Applications/
+    # one component package each; BundleIsRelocatable off, else an existing copy elsewhere gets updated instead
+    for c in plugin receiver; do
+      pkgbuild --analyze --root "build/root-$c" "build/$c.plist" >/dev/null
+      plutil -replace 0.BundleIsRelocatable -bool NO "build/$c.plist"
+    done
+    pkgbuild --root build/root-plugin --component-plist build/plugin.plist --identifier uk.co.christhoms.reaper-timecode-toolkit --version "$V" --install-location / build/pkg/plugin.pkg
+    pkgbuild --root build/root-receiver --component-plist build/receiver.plist --identifier uk.co.christhoms.artnet-timecode-receiver --version "$V" --install-location / build/pkg/receiver.pkg
+    # the receiver alone, and the toolkit with the receiver as a choice (Customize)
+    RP="dist/ArtNetTimecodeReceiver-$V-mac.pkg"
     P="dist/ReaperTimecodeToolkit-$V-mac.pkg"
-    pkgbuild --root build/pkgroot --component-plist build/component.plist --identifier uk.co.christhoms.reaper-timecode-toolkit --version "$V" --install-location / \
-      --sign "$SIGN_PKG" --timestamp "$P"
-    xcrun notarytool submit "$P" --keychain-profile "$NOTARY_PROFILE" --wait
-    xcrun stapler staple "$P"
-    spctl -a -vv -t install "$P"
-    LC_ALL=en_US.UTF-8 makensis -V2 -DVERSION="$V" -DOUT="$PWD/dist/ReaperTimecodeToolkit-$V-win64-setup.exe" -DSRC="$PWD/build/win" installer/win.nsi
+    productbuild --package build/pkg/receiver.pkg --sign "$SIGN_PKG" --timestamp "$RP"
+    productbuild --synthesize --package build/pkg/plugin.pkg --package build/pkg/receiver.pkg build/toolkit.dist
+    sed -i '' 's/customize="never"/customize="allow"/' build/toolkit.dist
+    productbuild --distribution build/toolkit.dist --package-path build/pkg --sign "$SIGN_PKG" --timestamp "$P"
+    for f in "$RP" "$P"; do
+      xcrun notarytool submit "$f" --keychain-profile "$NOTARY_PROFILE" --wait
+      xcrun stapler staple "$f"
+      spctl -a -vv -t install "$f"
+    done
+    LC_ALL=en_US.UTF-8 makensis -V2 -DVERSION="$V" -DOUT="$PWD/dist/ArtNetTimecodeReceiver-$V-win64-setup.exe" -DSRC="$PWD/build/win" installer/receiver.nsi
+    LC_ALL=en_US.UTF-8 makensis -V2 -DVERSION="$V" -DOUT="$PWD/dist/ReaperTimecodeToolkit-$V-win64-setup.exe" -DSRC="$PWD/build/win" \
+      -DRXSETUP="$PWD/dist/ArtNetTimecodeReceiver-$V-win64-setup.exe" installer/win.nsi
     ls -l dist ;;
   install)
     mac

@@ -7,7 +7,7 @@ CLAP plugin - generates Artnet Timecode either from LTC audio or DAW time.
 - Mutes LTC by default and sends non-LTC legs to both stereo channels.
 - Unicast or broadcast Artnet Timecode
 
-Art-Net Timecode Receiver: app, Art-Net timecode in, LTC and MTC out. Source, Rate, Latency, LTC device and channel, MTC port.
+Art-Net Timecode Receiver: app, Art-Net timecode in, LTC and MTC out. Source, Rate, Latency, LTC device and channel, MTC port. Own installer.
 
 ## Parameters
 

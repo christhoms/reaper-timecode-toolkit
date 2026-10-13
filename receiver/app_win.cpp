@@ -14,7 +14,7 @@ constexpr int kIdLatency = 100;
 COLORREF rgb(double r, double g, double b) { return RGB(int(r * 255 + 0.5), int(g * 255 + 0.5), int(b * 255 + 0.5)); }
 const COLORREF kGround = rgb(0.055, 0.062, 0.075), kBarBg = rgb(0.10, 0.11, 0.13), kField = rgb(0.13, 0.14, 0.165),
                kDim = rgb(0.60, 0.65, 0.71), kText = rgb(0.92, 0.94, 0.96), kOff = rgb(0.42, 0.46, 0.51),
-               kRun = rgb(0.36, 1.0, 0.58), kWarn = rgb(1.0, 0.78, 0.30);
+               kRun = rgb(0.36, 1.0, 0.58), kWarn = rgb(1.0, 0.78, 0.30), kSel = rgb(0.30, 0.32, 0.36);
 
 struct Gui {
   rx::App app;
@@ -31,6 +31,7 @@ struct Gui {
 
 RECT source_rect(const Gui &g) { return g.rc(84, g.rowY(0), 344, 24); }
 RECT rate_rect(const Gui &g) { return g.rc(84, g.rowY(1), 92, 24); }
+RECT unit_rect(const Gui &g, int i) { return g.rc(362 + i * 27, g.rowY(1), 26, 24); }
 RECT step_rect(const Gui &g, int dir) { return g.rc(338, g.rowY(1) + (dir > 0 ? 0 : 12), 18, 12); }
 RECT ltc_rect(const Gui &g) { return g.rc(84, g.rowY(2), 256, 24); }
 RECT chan_rect(const Gui &g) { return g.rc(348, g.rowY(2), 80, 24); }
@@ -42,21 +43,21 @@ void names(Gui &g) {
 }
 
 void show_latency(Gui &g) {
-  g.latShown = g.app.set.latencyMs.load();
+  g.latShown = g.app.latencyShown();
   char b[32];
-  std::snprintf(b, sizeof(b), "%.1f", g.latShown);
+  std::snprintf(b, sizeof(b), g.app.latencyFormat(), g.latShown);
   SetWindowTextA(g.lat, b);
 }
 void commit_latency(Gui &g) {
   char b[32] = {0};
   GetWindowTextA(g.lat, b, sizeof(b));
   for (char *c = b; *c; c++) if (*c == ',') *c = '.';
-  g.app.setLatency(std::atof(b));
+  g.app.setLatencyShown(std::atof(b));
   show_latency(g);
   SetFocus(g.hwnd);
 }
 void step_latency(Gui &g, int dir) {
-  g.app.setLatency(g.app.set.latencyMs.load() + dir * (GetKeyState(VK_SHIFT) < 0 ? 10.0 : 1.0));
+  g.app.stepLatency(dir, GetKeyState(VK_SHIFT) < 0);
   show_latency(g);
 }
 
@@ -153,7 +154,11 @@ void paint(Gui &g, HDC dc) {
     SelectObject(dc, oldB); SelectObject(dc, oldP);
     DeleteObject(b);
   }
-  text(dc, g.fUi, kDim, R::ms, g.rc(362, g.rowY(1) + 1, 30, 22), DT_LEFT | DT_VCENTER);
+  for (int i = 0; i < 2; i++) {
+    const bool sel = i == g.app.latUnit.load();
+    fill(dc, unit_rect(g, i), sel ? kSel : kField);
+    text(dc, g.fUi, sel ? kText : kDim, R::latencyUnits[i], unit_rect(g, i), DT_CENTER | DT_VCENTER);
+  }
 
   box(g, dc, ltc_rect(g), g.ltcName, !g.app.ltcDev.empty());
   const int ch = g.app.ltcCh.load();
@@ -188,6 +193,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     }
     case WM_TIMER:
       if (w == kTimerRepeat) { if (g->repeatDir) step_latency(*g, g->repeatDir); return 0; }
+      if (g->app.latencyShown() != g->latShown && GetFocus() != g->lat) show_latency(*g);  // frames follow the rate
       InvalidateRect(h, nullptr, FALSE);
       return 0;
     case WM_LBUTTONDOWN: {
@@ -202,6 +208,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       else if (in(ltc_rect(*g))) pick_device(*g, false);
       else if (in(chan_rect(*g))) pick_channel(*g);
       else if (in(mtc_rect(*g))) pick_device(*g, true);
+      for (int i = 0; i < 2; i++) if (in(unit_rect(*g, i))) { g->app.setLatencyUnit(i); show_latency(*g); }
       for (int dir : {1, -1}) {
         if (!in(step_rect(*g, dir))) continue;
         step_latency(*g, dir);

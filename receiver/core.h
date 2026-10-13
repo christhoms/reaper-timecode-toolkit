@@ -38,12 +38,14 @@ class Timeline {
     const SrcRate r = type_rate(type);
     Snap s = w_;
     const long day = frames_per_day(r.fps, r.df);
-    const bool cont = s.live && type == s.type && count == (last_ + 1) % day && t - s.lastT < 0.5;
+    // the next frame, or one a few frames on that arrives when it should: packets were lost, the timecode did not move
+    const long step = s.live && type == s.type ? (count - last_ + day) % day : 0;
+    const bool cont = step >= 1 && step <= 15 && t - s.lastT < 0.5 && (step == 1 || std::fabs((t - s.lastT) / s.dur - double(step)) < 1.0);
     if (!cont) {
       s.c0 = count; s.E = t; k_ = 0;
       s.fps = r.fps; s.df = r.df; s.dur = r.dur; s.type = type;
     } else {
-      k_++;
+      k_ += step;
       s.E = std::min(s.E + 0.002 * (t - s.lastT), t - double(k_) * s.dur);
     }
     s.live = true; s.lastT = t;

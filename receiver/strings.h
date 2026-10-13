@@ -8,7 +8,8 @@ namespace R {
 constexpr const char *appName = "Art-Net Timecode Receiver";
 
 // window labels
-constexpr const char *source = "Source", *rate = "Rate", *latency = "Latency", *ms = "ms", *ltc = "LTC", *mtc = "MTC";
+constexpr const char *source = "Source", *rate = "Rate", *latency = "Latency", *ltc = "LTC", *mtc = "MTC";
+constexpr const char *latencyUnits[2] = {"ms", "fr"};
 constexpr const char *automatic = "Auto", *off = "Off", *allChannels = "All";
 constexpr const char *rateNames[5] = {"Auto", "24", "25", "29.97 DF", "30"};
 inline std::string channel(int n) { return "Ch " + std::to_string(n); }

@@ -12,6 +12,7 @@ static CGFloat rowY(int i) { return kTop + 6 + i * kRow; }
   NSPopUpButton *_source, *_rate, *_ltc, *_chan, *_mtc;
   NSTextField *_lat;
   NSStepper *_step;
+  NSSegmentedControl *_unit;
   NSFont *_fTc, *_fUi;
   std::vector<rx::Source> _sources;
   std::vector<rx::Device> _audio, _midi;
@@ -48,6 +49,15 @@ static CGFloat rowY(int i) { return kTop + 6 + i * kRow; }
   _step.target = self;
   _step.action = @selector(latencyStepped:);
   [self addSubview:_step];
+  _unit = [NSSegmentedControl segmentedControlWithLabels:@[ @(R::latencyUnits[0]), @(R::latencyUnits[1]) ]
+                                            trackingMode:NSSegmentSwitchTrackingSelectOne
+                                                  target:self
+                                                  action:@selector(unitChanged:)];
+  _unit.frame = NSMakeRect(360, rowY(1), 60, 24);
+  _unit.controlSize = NSControlSizeSmall;
+  _unit.font = [NSFont systemFontOfSize:11];
+  _unit.selectedSegment = app->latUnit.load();
+  [self addSubview:_unit];
   [self showLatency];
   [self fillAll];
 
@@ -128,17 +138,21 @@ static CGFloat rowY(int i) { return kTop + 6 + i * kRow; }
   _app->setMtc(k > 0 && (size_t)k <= _midi.size() ? _midi[k - 1].id : "");
 }
 
-- (void)showLatency { _lat.stringValue = [NSString stringWithFormat:@"%.1f", _app->set.latencyMs.load()]; }
+- (void)showLatency { _lat.stringValue = [NSString stringWithFormat:@(_app->latencyFormat()), _app->latencyShown()]; }
+- (void)unitChanged:(id)s {
+  _app->setLatencyUnit((int)_unit.selectedSegment);
+  [self showLatency];
+}
 - (void)latencyEntered:(id)s {
   NSString *t = [_lat.stringValue stringByReplacingOccurrencesOfString:@"," withString:@"."];
-  _app->setLatency(t.doubleValue);
+  _app->setLatencyShown(t.doubleValue);
   [self showLatency];
   [self.window makeFirstResponder:self];
 }
 - (void)latencyStepped:(id)s {
   const int dir = _step.doubleValue > 0 ? 1 : -1;
   _step.doubleValue = 0;
-  _app->setLatency(_app->set.latencyMs.load() + dir * ((NSEvent.modifierFlags & NSEventModifierFlagShift) ? 10.0 : 1.0));
+  _app->stepLatency(dir, (NSEvent.modifierFlags & NSEventModifierFlagShift) != 0);
   [self showLatency];
 }
 
@@ -167,7 +181,6 @@ static CGFloat rowY(int i) { return kTop + 6 + i * kRow; }
     const char *labels[4] = {R::source, R::rate, R::ltc, R::mtc};
     for (int i = 0; i < 4; i++) [self text:labels[i] font:_fUi color:dim at:NSMakePoint(12, rowY(i) + 4) centered:NO];
     [self text:R::latency font:_fUi color:dim at:NSMakePoint(200, rowY(1) + 4) centered:NO];
-    [self text:R::ms font:_fUi color:dim at:NSMakePoint(362, rowY(1) + 4) centered:NO];
   } @catch (NSException *e) {
     NSLog(@"receiver: draw failed: %@", e);
   }

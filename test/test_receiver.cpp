@@ -15,7 +15,7 @@ static int g_fail = 0;
 // 10 ms blocks and decoded. Returns the worst distance (ms) between a decoded frame's end and where that frame ends
 // on the source timeline; -1 when the decoder got nothing or the frames do not chain.
 struct Run { long frames = 0, bad = 0; double worstMs = 0; int fps = 0; bool df = false; long first = -1, last = -1; };
-static Run ltc_run(int type, long c0, double secs, double jitterMs, int rateSel, double latencyMs, double stopAt = 1e9, long jumpTo = -1, double jumpAt = 1e9) {
+static Run ltc_run(int type, long c0, double secs, double jitterMs, int rateSel, double latencyMs, double stopAt = 1e9, long jumpTo = -1, double jumpAt = 1e9, int dropEvery = 0) {
   Timeline tl; Settings set; set.rate = rateSel; set.latencyMs = latencyMs;
   LtcGen gen(tl, set);
   Decoder dec; const double sr = 48000; dec.reset(sr);
@@ -31,7 +31,8 @@ static Run ltc_run(int type, long c0, double secs, double jitterMs, int rateSel,
     if (!jumped && t >= jumpAt) { jumped = true; base = jumpTo; tBase = t; k = 0; }
     while (tBase + k * r.dur <= t && tBase + k * r.dur < stopAt) {  // packets due up to now
       rnd = rnd * 1664525u + 1013904223u;
-      tl.packet((base + k) % frames_per_day(r.fps, r.df), type, tBase + k * r.dur + ((rnd >> 16) % 1000) * 1e-6 * jitterMs);
+      if (!dropEvery || k % dropEvery < dropEvery - 3)  // the last 3 of every dropEvery packets are lost
+        tl.packet((base + k) % frames_per_day(r.fps, r.df), type, tBase + k * r.dur + ((rnd >> 16) % 1000) * 1e-6 * jitterMs);
       k++;
     }
     gen.render(buf.data(), 480, sr, t, t);
@@ -77,6 +78,11 @@ static void test_ltc() {
     const Run R = ltc_run(3, tc_to_count(2, 0, 0, 0, 30, false), 4.0, 1.0, 0, lat);
     std::printf("  latency %+.0f ms: worst %.2f ms from the shifted source\n", lat, R.worstMs);
     CHECK(R.bad == 0 && R.frames > 90 && R.worstMs < 1.5, "latency %+.0f: %ld bad, worst %.2f", lat, R.bad, R.worstMs);
+  }
+  {  // 3 packets in every 10 lost: the LTC neither stops nor moves
+    const Run R = ltc_run(3, tc_to_count(2, 0, 0, 0, 30, false), 5.0, 1.0, 0, 0.0, 1e9, -1, 1e9, 10);
+    std::printf("  3 of every 10 packets lost: %ld frames, %ld bad, worst %.2f ms\n", R.frames, R.bad, R.worstMs);
+    CHECK(R.bad == 0 && R.frames > 140 && R.worstMs < 1.5, "lost packets: %ld frames, %ld bad, worst %.2f", R.frames, R.bad, R.worstMs);
   }
   {  // packets stop at 2 s: LTC stops within the hold time
     const Run R = ltc_run(3, tc_to_count(2, 0, 0, 0, 30, false), 4.0, 0.0, 0, 0.0, 2.0);

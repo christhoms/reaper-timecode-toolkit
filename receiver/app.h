@@ -18,6 +18,8 @@ struct App {
   bool bound = false, midiOk = true;
   std::string ltcDev, mtcPort;   // "" = Off
   std::atomic<int> ltcCh{0};     // 0 = all channels, n = channel n
+  std::atomic<int> latUnit{0};   // the window shows and steps the latency in 0 ms, 1 frames of the output rate
+  std::atomic<double> frameMs{1000.0 / 30.0};
   std::vector<float> mono;       // audio thread
 
   static std::string file() { return prefs_path() + kSep + "receiver.txt"; }
@@ -34,6 +36,7 @@ struct App {
         if (k == "source") listener.choose(v);
         else if (k == "rate") set.rate = std::min(4, std::max(0, std::atoi(v.c_str())));
         else if (k == "latency_ms") set.latencyMs = clamp_latency(std::atof(v.c_str()));
+        else if (k == "latency_unit") latUnit = v == "fr" ? 1 : 0;
         else if (k == "ltc") ltcDev = v;
         else if (k == "ltc_ch") ltcCh = std::max(0, std::atoi(v.c_str()));
         else if (k == "mtc") mtcPort = v;
@@ -44,8 +47,8 @@ struct App {
   void save() {
     make_dir(prefs_path());
     if (FILE *f = std::fopen(file().c_str(), "w")) {
-      std::fprintf(f, "source=%s\nrate=%d\nlatency_ms=%.2f\nltc=%s\nltc_ch=%d\nmtc=%s\n", listener.choice().c_str(), set.rate.load(),
-                   set.latencyMs.load(), ltcDev.c_str(), ltcCh.load(), mtcPort.c_str());
+      std::fprintf(f, "source=%s\nrate=%d\nlatency_ms=%.2f\nlatency_unit=%s\nltc=%s\nltc_ch=%d\nmtc=%s\n", listener.choice().c_str(), set.rate.load(),
+                   set.latencyMs.load(), latUnit.load() ? "fr" : "ms", ltcDev.c_str(), ltcCh.load(), mtcPort.c_str());
       std::fclose(f);
     }
   }
@@ -87,6 +90,14 @@ struct App {
   void setSource(const std::string &ip) { listener.choose(ip); save(); }
   void setRate(int sel) { set.rate = sel; save(); }
   void setLatency(double ms) { set.latencyMs = clamp_latency(ms); save(); }
+  double latencyShown() const { return latUnit.load() ? set.latencyMs.load() / frameMs.load() : set.latencyMs.load(); }
+  const char *latencyFormat() const { return latUnit.load() ? "%.2f" : "%.1f"; }
+  void setLatencyShown(double v) { setLatency(latUnit.load() ? v * frameMs.load() : v); }
+  void stepLatency(int dir, bool otherUnit) {  // one of the shown unit; with Shift one of the other
+    const bool frames = (latUnit.load() != 0) != otherUnit;
+    setLatency(set.latencyMs.load() + dir * (frames ? frameMs.load() : 1.0));
+  }
+  void setLatencyUnit(int u) { latUnit = u ? 1 : 0; save(); }
   void setLtc(const std::string &id) { ltcDev = id; ltcCh = 0; save(); openLtc(); }
   void setLtcChannel(int ch) { ltcCh = ch; save(); }
   void setMtc(const std::string &id) { mtcPort = id; save(); openMtc(); }
@@ -125,6 +136,7 @@ struct App {
     if (u.running) {
       lastTc = count_to_tc(wrap_frame(p.y, p.o), p.o.fps, p.o.df);
       lastDf = p.o.df;
+      frameMs = 1000.0 / p.realFps;
       add(R::rateName(p.o.fps, p.o.df));
       add(listener.following());
     }

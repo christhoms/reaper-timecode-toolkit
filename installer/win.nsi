@@ -1,4 +1,5 @@
-; Reaper Timecode Toolkit, Windows x64 installer. makensis -DVERSION= -DOUT= -DSRC= win.nsi
+; Reaper Timecode Toolkit, Windows x64 installer. makensis -DVERSION= -DOUT= -DSRC= -DRXSETUP= win.nsi
+; RXSETUP = the receiver's own installer (receiver.nsi), offered here as an option and run as it is.
 Unicode true
 !include "x64.nsh"
 Name "Reaper Timecode Toolkit ${VERSION}"
@@ -7,7 +8,7 @@ RequestExecutionLevel admin
 InstallDir "$PROGRAMFILES64\Reaper Timecode Toolkit"
 !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Reaper Timecode Toolkit"
 
-Page directory
+Page components
 Page instfiles
 UninstPage uninstConfirm
 UninstPage instfiles
@@ -24,13 +25,11 @@ Function un.onInit
   SetRegView 64
 FunctionEnd
 
-Section
+Section "Reaper Timecode Toolkit"
+  SectionIn RO
   SetOutPath "$COMMONFILES64\CLAP"
   File "${SRC}\ReaperTimecodeToolkit.clap"
   SetOutPath "$INSTDIR"
-  File "${SRC}\ArtNetTimecodeReceiver.exe"
-  SetShellVarContext all
-  CreateShortcut "$SMPROGRAMS\Art-Net Timecode Receiver.lnk" "$INSTDIR\ArtNetTimecodeReceiver.exe"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "${UNKEY}" "DisplayName" "Reaper Timecode Toolkit"
   WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "${VERSION}"
@@ -40,11 +39,14 @@ Section
   WriteRegDWORD HKLM "${UNKEY}" "NoRepair" 1
 SectionEnd
 
+Section /o "Art-Net Timecode Receiver"
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\receiver-setup.exe" "${RXSETUP}"
+  ExecWait '"$PLUGINSDIR\receiver-setup.exe" /S'
+SectionEnd
+
 Section "Uninstall"
   Delete "$COMMONFILES64\CLAP\ReaperTimecodeToolkit.clap"
-  SetShellVarContext all
-  Delete "$SMPROGRAMS\Art-Net Timecode Receiver.lnk"
-  Delete "$INSTDIR\ArtNetTimecodeReceiver.exe"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKLM "${UNKEY}"
