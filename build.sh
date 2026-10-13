@@ -1,7 +1,7 @@
 #!/bin/sh
-# ./build.sh          macOS plugin
+# ./build.sh          macOS plugin and receiver app
 # ./build.sh install  ... copied to ~/Library/Audio/Plug-Ins/CLAP
-# ./build.sh win      Windows x64 plugin (cross-compiled, mingw-w64)
+# ./build.sh win      Windows x64 plugin and receiver (cross-compiled, mingw-w64)
 # ./build.sh dist     both, plus installers in dist/ (pkgbuild, makensis; makensis 3.12 needs a UTF-8 locale).
 #                     The .pkg is Developer ID signed and notarized: needs both Developer ID certs in the keychain and
 #                     a notarytool profile (xcrun notarytool store-credentials "$NOTARY_PROFILE" --apple-id ... --team-id SWS95WXK99)
@@ -24,6 +24,15 @@ mac() {
   clang++ -std=c++17 -O2 -Wall -Wextra $INC -o build/mac/test_core test/test_core.cpp
   clang++ -std=c++17 -O2 -fobjc-arc $INC -I test -framework Cocoa -o build/mac/gui_test test/gui_test.mm
   ./build/mac/test_core "$PWD/$B/MacOS/ReaperTimecodeToolkit"
+  R="build/mac/Art-Net Timecode Receiver.app/Contents"
+  mkdir -p "$R/MacOS"
+  cp receiver/Info.plist "$R/Info.plist"
+  clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 -I src \
+    -framework Cocoa -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework CoreMIDI \
+    -o "$R/MacOS/ArtNetTimecodeReceiver" receiver/app_mac.mm receiver/io_mac.mm
+  codesign --force -s - "build/mac/Art-Net Timecode Receiver.app"
+  clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -I src -o build/mac/test_receiver test/test_receiver.cpp
+  ./build/mac/test_receiver
 }
 
 win() {
@@ -31,6 +40,7 @@ win() {
   W="x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0A00 -static -s $INC"
   $W -shared -o build/win/ReaperTimecodeToolkit.clap src/plugin.cpp src/gui_win.cpp -lws2_32 -liphlpapi -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32
   $W -o build/win/test_core.exe test/test_core.cpp -lws2_32 -liphlpapi -lwinmm -lavrt
+  $W -mwindows -o build/win/ArtNetTimecodeReceiver.exe receiver/app_win.cpp receiver/io_win.cpp -lws2_32 -liphlpapi -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32 -lole32
 }
 
 case "$1" in
@@ -42,10 +52,14 @@ case "$1" in
     xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null || { echo "missing notarytool profile: $NOTARY_PROFILE"; exit 1; }
     codesign --force --options runtime --timestamp -s "$SIGN_APP" build/mac/ReaperTimecodeToolkit.clap
     codesign --verify --strict --verbose=2 build/mac/ReaperTimecodeToolkit.clap
-    rm -rf dist build/pkgroot && mkdir -p dist "build/pkgroot/Library/Audio/Plug-Ins/CLAP"
+    codesign --force --options runtime --timestamp -s "$SIGN_APP" "build/mac/Art-Net Timecode Receiver.app"
+    codesign --verify --strict --verbose=2 "build/mac/Art-Net Timecode Receiver.app"
+    rm -rf dist build/pkgroot && mkdir -p dist "build/pkgroot/Library/Audio/Plug-Ins/CLAP" build/pkgroot/Applications
     cp -R build/mac/ReaperTimecodeToolkit.clap "build/pkgroot/Library/Audio/Plug-Ins/CLAP/"
+    cp -R "build/mac/Art-Net Timecode Receiver.app" build/pkgroot/Applications/
     pkgbuild --analyze --root build/pkgroot build/component.plist >/dev/null
     plutil -replace 0.BundleIsRelocatable -bool NO build/component.plist  # else an existing copy elsewhere gets updated instead
+    plutil -replace 1.BundleIsRelocatable -bool NO build/component.plist
     P="dist/ReaperTimecodeToolkit-$V-mac.pkg"
     pkgbuild --root build/pkgroot --component-plist build/component.plist --identifier uk.co.christhoms.reaper-timecode-toolkit --version "$V" --install-location / \
       --sign "$SIGN_PKG" --timestamp "$P"

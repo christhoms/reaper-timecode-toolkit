@@ -28,6 +28,9 @@ Section
   SetOutPath "$COMMONFILES64\CLAP"
   File "${SRC}\ReaperTimecodeToolkit.clap"
   SetOutPath "$INSTDIR"
+  File "${SRC}\ArtNetTimecodeReceiver.exe"
+  SetShellVarContext all
+  CreateShortcut "$SMPROGRAMS\Art-Net Timecode Receiver.lnk" "$INSTDIR\ArtNetTimecodeReceiver.exe"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "${UNKEY}" "DisplayName" "Reaper Timecode Toolkit"
   WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "${VERSION}"
@@ -39,6 +42,9 @@ SectionEnd
 
 Section "Uninstall"
   Delete "$COMMONFILES64\CLAP\ReaperTimecodeToolkit.clap"
+  SetShellVarContext all
+  Delete "$SMPROGRAMS\Art-Net Timecode Receiver.lnk"
+  Delete "$INSTDIR\ArtNetTimecodeReceiver.exe"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKLM "${UNKEY}"
