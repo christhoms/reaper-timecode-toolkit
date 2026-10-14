@@ -9,6 +9,6 @@ memory:
   - README.md
   - CLAUDE.md
 focus: >
-  2.0.0 released (Windows installer). Owed: macOS build of 2.0.0 (gui_mac.mm unbuilt since the rename), then the
-  .pkg on the release. Open: Ctrl+A in the Win32 IP field.
-updated: 2026-09-21
+  2.1.0 released. Branch `receiver` (2.2.0): companion app Art-Net Timecode Receiver (Art-Net TC in, LTC + MTC out),
+  Windows done. NEXT on the Mac: hq/docs/timecode-receiver-mac.md (build the .mm files, sign, release 2.2.0).
+updated: 2026-10-13
