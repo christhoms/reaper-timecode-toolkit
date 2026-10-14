@@ -14,6 +14,7 @@ constexpr const char *automatic = "Auto", *off = "Off", *allChannels = "All";
 constexpr const char *rateNames[5] = {"Auto", "24", "25", "29.97 DF", "30"};
 inline std::string channel(int n) { return "Ch " + std::to_string(n); }
 constexpr const char *virtualPort = "Art-Net Timecode Receiver";  // the MIDI source this app creates (macOS)
+constexpr const char *loopbackName = "Timecode Loopback";         // the audio device the installer adds (macOS)
 
 // status line, joined with sep
 constexpr const char *sep = "  |  ";

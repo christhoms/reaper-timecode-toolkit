@@ -9,6 +9,8 @@ CLAP plugin - generates Artnet Timecode either from LTC audio or DAW time.
 
 Art-Net Timecode Receiver: app, Art-Net timecode in, LTC and MTC out. Source, Rate, Latency, LTC device and channel, MTC port. Own installer.
 
+Timecode Loopback: Mac audio device, its input carries its output. Installed with the receiver: LTC out to it, Resolume reads it as an input.
+
 ## Parameters
 
 | | Default | Stored |

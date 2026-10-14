@@ -1,0 +1,4 @@
+#!/bin/sh
+# coreaudiod loads HAL plug-ins when it starts; launchd restarts it at once
+/usr/bin/killall coreaudiod 2>/dev/null
+exit 0
