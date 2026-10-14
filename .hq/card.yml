@@ -10,5 +10,6 @@ memory:
   - CLAUDE.md
 focus: >
   2.1.0 released. Branch `receiver` (2.2.0): companion app Art-Net Timecode Receiver (Art-Net TC in, LTC + MTC out),
-  Windows done. NEXT on the Mac: hq/docs/timecode-receiver-mac.md (build the .mm files, sign, release 2.2.0).
-updated: 2026-10-13
+  built and tested on Windows and Mac. Blocked on Apple: developer agreement expired (notarytool 403). Then
+  `./build.sh dist`, install both Mac pkgs, merge to main, release 2.2.0 (hq/docs/timecode-receiver-mac.md steps 5-6).
+updated: 2026-10-14
