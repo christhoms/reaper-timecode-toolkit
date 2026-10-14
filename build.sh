@@ -69,8 +69,25 @@ case "$1" in
     RP="dist/ArtNetTimecodeReceiver-$V-mac.pkg"
     P="dist/ReaperTimecodeToolkit-$V-mac.pkg"
     productbuild --package build/pkg/receiver.pkg --sign "$SIGN_PKG" --timestamp "$RP"
-    productbuild --synthesize --package build/pkg/plugin.pkg --package build/pkg/receiver.pkg build/toolkit.dist
-    sed -i '' 's/customize="never"/customize="allow"/' build/toolkit.dist
+    # Customize: the toolkit fixed, the receiver unticked (as on Windows)
+    cat > build/toolkit.dist <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+  <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+  <choices-outline>
+    <line choice="plugin"/>
+    <line choice="receiver"/>
+  </choices-outline>
+  <choice id="plugin" title="Reaper Timecode Toolkit" enabled="false">
+    <pkg-ref id="uk.co.christhoms.reaper-timecode-toolkit"/>
+  </choice>
+  <choice id="receiver" title="Art-Net Timecode Receiver" start_selected="false">
+    <pkg-ref id="uk.co.christhoms.artnet-timecode-receiver"/>
+  </choice>
+  <pkg-ref id="uk.co.christhoms.reaper-timecode-toolkit" version="$V" onConclusion="none">plugin.pkg</pkg-ref>
+  <pkg-ref id="uk.co.christhoms.artnet-timecode-receiver" version="$V" onConclusion="none">receiver.pkg</pkg-ref>
+</installer-gui-script>
+EOF
     productbuild --distribution build/toolkit.dist --package-path build/pkg --sign "$SIGN_PKG" --timestamp "$P"
     for f in "$RP" "$P"; do
       xcrun notarytool submit "$f" --keychain-profile "$NOTARY_PROFILE" --wait
