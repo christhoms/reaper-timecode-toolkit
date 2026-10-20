@@ -1,4 +1,5 @@
 // Tests for the receiver core: timeline, LTC out (decoded again with the plugin's decoder), MTC, the UDP listener.
+#include <cstring>
 #include <vector>
 
 #include "../receiver/core.h"
@@ -182,9 +183,24 @@ static void test_listener() {
   L.stop();
 }
 
+static void test_ble_midi() {
+  std::printf("Bluetooth MIDI packets\n");
+  unsigned char out[32];
+  const unsigned char qf[2] = {0xF1, 0x23};
+  int n = ble_midi_packet(qf, 2, 8192 + 300, out);  // the clock wraps at 8192 ms: 300 = 0b10'0101100
+  const unsigned char wantQ[4] = {0x82, 0xAC, 0xF1, 0x23};
+  CHECK(n == 4 && !std::memcmp(out, wantQ, 4), "quarter frame: %d bytes %02X %02X %02X %02X", n, out[0], out[1], out[2], out[3]);
+  const unsigned char ff[10] = {0xF0, 0x7F, 0x7F, 0x01, 0x01, 0x2D, 0x2F, 0x14, 0x00, 0xF7};
+  n = ble_midi_packet(ff, 10, 1000, out);  // 1000 = 0b111'1101000
+  const unsigned char wantF[13] = {0x87, 0xE8, 0xF0, 0x7F, 0x7F, 0x01, 0x01, 0x2D, 0x2F, 0x14, 0x00, 0xE8, 0xF7};
+  CHECK(n == 13 && !std::memcmp(out, wantF, 13), "full frame: %d bytes", n);
+  std::printf("  quarter frame %d bytes, full frame %d bytes, timestamp before F7\n", 4, n);
+}
+
 int main() {
   test_ltc();
   test_mtc();
+  test_ble_midi();
   test_listener();
   if (g_fail) { std::printf("\n%d check(s) FAILED\n", g_fail); return 1; }
   std::printf("\nall checks passed\n");

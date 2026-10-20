@@ -11,5 +11,6 @@
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSLocalNetworkUsageDescription</key><string>Receives Art-Net timecode.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>Finds Bluetooth MIDI devices.</string>
 </dict>
 </plist>

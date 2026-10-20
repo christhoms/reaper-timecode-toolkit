@@ -209,6 +209,8 @@ void MidiOut::close() {
   std::lock_guard<std::mutex> g(p_->mu);
   if (p_->h) { midiOutReset(p_->h); midiOutClose(p_->h); p_->h = nullptr; }
 }
+bool MidiOut::failed() const { return false; }
+void bluetooth_scan(bool, std::function<void()>) {}
 void MidiOut::send(const unsigned char *b, int n) {
   std::lock_guard<std::mutex> g(p_->mu);
   if (!p_->h || n <= 0) return;

@@ -12,6 +12,9 @@ struct Device { std::string id, name; };
 
 std::vector<Device> audio_outputs();
 std::vector<Device> midi_outputs();
+// macOS: look for Bluetooth MIDI devices while on; midi_outputs() lists them, changed() runs when one appears.
+// Elsewhere a no-op.
+void bluetooth_scan(bool on, std::function<void()> changed);
 
 class AudioOut {
  public:
@@ -36,6 +39,7 @@ class MidiOut {
   bool open(const std::string &id);
   void close();
   void send(const unsigned char *bytes, int n);
+  bool failed() const;  // a Bluetooth device is not connected
 
  private:
   struct Impl;

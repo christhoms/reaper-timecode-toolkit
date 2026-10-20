@@ -190,6 +190,20 @@ inline unsigned char mtc_quarter(int piece, const Timecode &t, int type) {
   return (unsigned char)((piece << 4) | v);
 }
 
+// One MIDI message as a Bluetooth LE MIDI packet (BLE MIDI 1.0): header and timestamp bytes from a millisecond clock,
+// a timestamp again before a SysEx end. Returns the length written to out (n + 3 at most).
+inline int ble_midi_packet(const unsigned char *m, int n, unsigned ms, unsigned char *out) {
+  const unsigned char lo = (unsigned char)(0x80 | (ms & 0x7F));
+  int k = 0;
+  out[k++] = (unsigned char)(0x80 | ((ms >> 7) & 0x3F));
+  out[k++] = lo;
+  for (int i = 0; i < n; i++) {
+    if (m[i] == 0xF7 && i > 0) out[k++] = lo;
+    out[k++] = m[i];
+  }
+  return k;
+}
+
 class Mtc {
  public:
   using Send = std::function<void(const unsigned char *, int)>;

@@ -33,6 +33,7 @@ static CGFloat rowY(int i) { return kTop + 6 + i * kRow; }
   _ltc = [self popupAt:NSMakeRect(84, rowY(2), 256, 24) action:@selector(ltcPicked:)];
   _chan = [self popupAt:NSMakeRect(348, rowY(2), 80, 24) action:@selector(chanPicked:)];
   _mtc = [self popupAt:NSMakeRect(84, rowY(3), 344, 24) action:@selector(mtcPicked:)];
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(mtcClosed:) name:NSMenuDidEndTrackingNotification object:_mtc.menu];
   for (int i = 0; i < 5; i++) [_rate addItemWithTitle:@(R::rateNames[i])];
   [_rate selectItemAtIndex:app->set.rate.load()];
 
@@ -80,7 +81,24 @@ static CGFloat rowY(int i) { return kTop + 6 + i * kRow; }
 - (BOOL)isFlipped { return YES; }
 - (BOOL)isOpaque { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
-- (void)willPop:(NSNotification *)n { [self fillAll]; }
+- (void)willPop:(NSNotification *)n {
+  [self fillAll];
+  if (n.object != _mtc) return;
+  __weak RXView *weak = self;  // Bluetooth MIDI devices are looked for while the MTC picker is open
+  rx::bluetooth_scan(true, [weak] { dispatch_async(dispatch_get_main_queue(), ^{ [weak bluetoothFound]; }); });
+}
+- (void)mtcClosed:(NSNotification *)n { rx::bluetooth_scan(false, nullptr); }
+// found while the picker is open: added to the end of the open list
+- (void)bluetoothFound {
+  for (const rx::Device &d : rx::midi_outputs()) {
+    bool listed = false;
+    for (const rx::Device &m : _midi) listed = listed || m.id == d.id;
+    if (listed) continue;
+    _midi.push_back(d);
+    [_mtc addItemWithTitle:@""];
+    _mtc.lastItem.title = @(d.name.c_str());
+  }
+}
 
 // lists are read again each time a picker opens
 - (void)fillAll {

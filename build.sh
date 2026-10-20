@@ -30,7 +30,7 @@ mac() {
   mkdir -p "$R/MacOS"
   cp receiver/Info.plist "$R/Info.plist"
   clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 -I src \
-    -framework Cocoa -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework CoreMIDI \
+    -framework Cocoa -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework CoreMIDI -framework CoreBluetooth \
     -o "$R/MacOS/ArtNetTimecodeReceiver" receiver/app_mac.mm receiver/io_mac.mm
   codesign --force -s - "build/mac/Art-Net Timecode Receiver.app"
   clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -I src -o build/mac/test_receiver test/test_receiver.cpp

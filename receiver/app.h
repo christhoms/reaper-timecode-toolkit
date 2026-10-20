@@ -141,7 +141,7 @@ struct App {
       add(listener.following());
     }
     std::snprintf(u.tc, sizeof(u.tc), "%02d:%02d:%02d%c%02d", lastTc.h, lastTc.m, lastTc.s, lastDf ? ';' : ':', lastTc.f);
-    const char *fault = !bound ? R::portBusy : audio.failed() ? R::ltcFailed : !midiOk ? R::mtcFailed : nullptr;
+    const char *fault = !bound ? R::portBusy : audio.failed() ? R::ltcFailed : !midiOk || midi.failed() ? R::mtcFailed : nullptr;
     if (fault) { add(fault); u.fault = true; }
     return u;
   }
