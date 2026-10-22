@@ -30,6 +30,7 @@ constexpr const char *rateLabel = "Rate";
 constexpr const char *rateNames[5] = {"Auto", "24", "25", "29.97 DF", "30"};
 constexpr const char *muteLtc = "Mute LTC", *exclusive = "Exclusive", *offset = "Offset", *broadcast = "Broadcast";
 constexpr const char *offsetZero = "00:00:00:00";
+constexpr const char *mtc = "MTC", *mtcOff = "Off";
 
 // status line, joined with sep
 constexpr const char *sep = "  |  ";
@@ -44,6 +45,7 @@ inline const char *ltcLeg(int channel) { return channel == 0 ? "LTC L" : "LTC R"
 constexpr const char *noLock = "no lock", *noDestination = "no destination", *sendFailed = "send failed";
 constexpr const char *otherInstance = "other instance sending", *noInterface = "no interface";
 constexpr const char *chooseInterface = "interface";  // the broadcast picker with nothing chosen
+constexpr const char *mtcFailed = "MTC port failed";
 
 // beside the latency field: the same value in the other unit
 inline std::string latencyFrames(double frames) { char b[32]; std::snprintf(b, sizeof(b), "%+.2f fr", frames); return b; }

@@ -1,5 +1,8 @@
 // Reaper Timecode Toolkit: CLAP glue. GUI: gui_mac.mm / gui_win.cpp.
 #include "plugin.h"
+#ifdef __APPLE__
+#include "../receiver/ble.h"
+#endif
 
 namespace {
 
@@ -43,6 +46,10 @@ bool plug_init(const clap_plugin_t *p) {
     }
   }
   s->refreshProject();
+  rx::midi_set_name(S::pluginName);
+  s->sender.onSend = [s](long count, int type, double t) { s->mtcTl.packet(count, type, t); };
+  s->mtcPort = ctltc::load_mtc_port();
+  s->openMtc();
   s->sender.start();
   return true;
 }
@@ -51,6 +58,8 @@ void plug_destroy(const clap_plugin_t *p) {
   Plugin *s = P(p);
   gui_free(s);
   s->sender.stop();
+  s->mtc.stop();
+  s->midi.close();
   delete s;
 }
 
@@ -466,7 +475,11 @@ const clap_plugin_t *factory_create(const clap_plugin_factory_t *, const clap_ho
 const clap_plugin_factory_t kFactory = {factory_count, factory_desc, factory_create};
 
 bool entry_init(const char *) { return true; }
-void entry_deinit(void) {}
+void entry_deinit(void) {
+#ifdef __APPLE__
+  rx::ble::shutdown();  // the Bluetooth helper's connection thread must not outlive this code
+#endif
+}
 const void *entry_get_factory(const char *id) { return !std::strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &kFactory : nullptr; }
 
 }  // namespace

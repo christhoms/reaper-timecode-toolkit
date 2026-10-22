@@ -5,6 +5,8 @@
 
 #include "ltc_core.h"
 #include "strings.h"
+#include "../receiver/core.h"
+#include "../receiver/io.h"
 
 #define RTT_VERSION "2.2.0"
 
@@ -115,6 +117,23 @@ struct Plugin {
   std::string ip, ifAddr;
   bool broadcast = false;
   std::atomic<bool> noInterface{false};  // broadcast chosen, interface not present
+
+  // MTC out, fed by the sender as each frame leaves: the same rate, latency, offset and Exclusive as the Art-Net
+  rx::Timeline mtcTl;
+  rx::Settings mtcSet;
+  rx::Mtc mtc{mtcTl, mtcSet};
+  rx::MidiOut midi;
+  std::string mtcPort;  // "" = off (UI thread)
+  bool midiOk = true;
+  void openMtc() {
+    mtc.stop();
+    midi.close();
+    midiOk = true;
+    if (mtcPort.empty()) return;
+    midiOk = midi.open(mtcPort);
+    if (midiOk) mtc.start([this](const unsigned char *b, int n) { midi.send(b, n); });
+  }
+  void setMtc(const std::string &id) { mtcPort = id; ctltc::save_mtc_port(id); openMtc(); }
   void *view = nullptr;  // platform GUI object
   double guiScale = 1.0;
 
@@ -170,7 +189,7 @@ struct Plugin {
 };
 
 // ---- what the window shows (same words on both platforms) ----------------------------------------------------
-constexpr int kGuiW = 440, kGuiH = 271, kGuiBar = 137;
+constexpr int kGuiW = 440, kGuiH = 304, kGuiBar = 170;
 enum UiColor { kUiOff, kUiDim, kUiLtc, kUiDaw, kUiCoast, kUiWarn };
 
 struct UiState {
@@ -208,6 +227,7 @@ inline UiState ui_state(Plugin &s) {
   const char *send = (s.broadcast ? s.ifAddr.empty() : s.ip.empty()) ? S::noDestination : s.noInterface.load() ? S::noInterface
                      : (locked && s.sender.failed()) ? S::sendFailed : nullptr;
   if (send) { add(send); u.lineColor = kUiWarn; }
+  if (!s.mtcPort.empty() && (!s.midiOk || s.midi.failed())) { add(S::mtcFailed); u.lineColor = kUiWarn; }
 
   const double offMs = s.sender.latencyMs();
   if (offMs != 0) u.latencyNote = s.latencyUnit.load() ? S::latencyMs(offMs) : S::latencyFrames(offMs / s.frameMs());

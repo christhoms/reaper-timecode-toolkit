@@ -1,4 +1,4 @@
-// Audio and MIDI outputs. io_win.cpp: WASAPI + WinMM. io_mac.mm: Core Audio + Core MIDI.
+// Audio and MIDI outputs. io_win.cpp: WASAPI + WinMM. io_mac.mm: Core Audio; midi_mac.mm: Core MIDI and Bluetooth.
 #pragma once
 
 #include <atomic>
@@ -12,6 +12,7 @@ struct Device { std::string id, name; };
 
 std::vector<Device> audio_outputs();
 std::vector<Device> midi_outputs();
+void midi_set_name(const char *name);  // the MIDI source this process creates (macOS); the receiver's name by default
 // macOS: look for Bluetooth MIDI devices while on; midi_outputs() lists them, changed() runs when one appears.
 // Elsewhere a no-op.
 void bluetooth_scan(bool on, std::function<void()> changed);

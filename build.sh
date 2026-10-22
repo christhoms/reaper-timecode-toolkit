@@ -20,18 +20,25 @@ mac() {
   rm -rf build/mac && mkdir -p "$B/MacOS"
   cp src/Info.plist "$B/Info.plist"
   clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc -fvisibility=hidden \
-    -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 $INC -bundle -framework Cocoa \
-    -o "$B/MacOS/ReaperTimecodeToolkit" src/plugin.cpp src/gui_mac.mm
+    -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 $INC -bundle -framework Cocoa -framework CoreMIDI \
+    -o "$B/MacOS/ReaperTimecodeToolkit" src/plugin.cpp src/gui_mac.mm receiver/midi_mac.mm receiver/ble_client_mac.mm
+  # the Bluetooth helper: the plugin's host has no Bluetooth access of its own
+  H="$B/Helpers/RTTBluetooth.app/Contents"
+  mkdir -p "$H/MacOS"
+  cp helper/Info.plist "$H/Info.plist"
+  clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 -I src -I receiver \
+    -framework Foundation -framework CoreBluetooth -o "$H/MacOS/RTTBluetooth" helper/bluetooth_helper.mm receiver/ble_mac.mm
+  codesign --force -s - "$B/Helpers/RTTBluetooth.app"
   codesign --force -s - build/mac/ReaperTimecodeToolkit.clap
-  clang++ -std=c++17 -O2 -Wall -Wextra $INC -o build/mac/test_core test/test_core.cpp
-  clang++ -std=c++17 -O2 -fobjc-arc $INC -I test -framework Cocoa -o build/mac/gui_test test/gui_test.mm
+  clang++ -std=c++17 -O2 -Wall -Wextra $INC -framework CoreMIDI -framework CoreFoundation -o build/mac/test_core test/test_core.cpp
+  clang++ -std=c++17 -O2 -fobjc-arc $INC -I test -framework Cocoa -framework CoreMIDI -o build/mac/gui_test test/gui_test.mm
   ./build/mac/test_core "$PWD/$B/MacOS/ReaperTimecodeToolkit"
   R="build/mac/Art-Net Timecode Receiver.app/Contents"
   mkdir -p "$R/MacOS"
   cp receiver/Info.plist "$R/Info.plist"
   clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -fobjc-arc -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 -I src \
     -framework Cocoa -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework CoreMIDI -framework CoreBluetooth \
-    -o "$R/MacOS/ArtNetTimecodeReceiver" receiver/app_mac.mm receiver/io_mac.mm
+    -o "$R/MacOS/ArtNetTimecodeReceiver" receiver/app_mac.mm receiver/io_mac.mm receiver/midi_mac.mm receiver/ble_mac.mm
   codesign --force -s - "build/mac/Art-Net Timecode Receiver.app"
   clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -I src -o build/mac/test_receiver test/test_receiver.cpp
   ./build/mac/test_receiver
@@ -48,7 +55,7 @@ mac() {
 win() {
   rm -rf build/win && mkdir -p build/win
   W="x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0A00 -static -s $INC"
-  $W -shared -o build/win/ReaperTimecodeToolkit.clap src/plugin.cpp src/gui_win.cpp -lws2_32 -liphlpapi -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32
+  $W -shared -o build/win/ReaperTimecodeToolkit.clap src/plugin.cpp src/gui_win.cpp receiver/io_win.cpp -lws2_32 -liphlpapi -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32 -lole32
   $W -o build/win/test_core.exe test/test_core.cpp -lws2_32 -liphlpapi -lwinmm -lavrt
   $W -mwindows -o build/win/ArtNetTimecodeReceiver.exe receiver/app_win.cpp receiver/io_win.cpp -lws2_32 -liphlpapi -lwinmm -lavrt -lgdi32 -luser32 -lcomctl32 -lole32
 }
@@ -60,7 +67,8 @@ case "$1" in
     security find-identity -v | grep -q "$SIGN_APP" || { echo "missing: $SIGN_APP"; exit 1; }
     security find-identity -v | grep -q "$SIGN_PKG" || { echo "missing: $SIGN_PKG"; exit 1; }
     xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null || { echo "missing notarytool profile: $NOTARY_PROFILE"; exit 1; }
-    for b in build/mac/ReaperTimecodeToolkit.clap "build/mac/Art-Net Timecode Receiver.app" build/mac/TimecodeLoopback.driver; do
+    for b in build/mac/ReaperTimecodeToolkit.clap/Contents/Helpers/RTTBluetooth.app build/mac/ReaperTimecodeToolkit.clap \
+             "build/mac/Art-Net Timecode Receiver.app" build/mac/TimecodeLoopback.driver; do  # inner code before the bundle holding it
       codesign --force --options runtime --timestamp -s "$SIGN_APP" "$b"
       codesign --verify --strict --verbose=2 "$b"
     done

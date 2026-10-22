@@ -6,6 +6,7 @@ CLAP plugin - generates Artnet Timecode either from LTC audio or DAW time.
 - Coasts over dropouts
 - Mutes LTC by default and sends non-LTC legs to both stereo channels.
 - Unicast or broadcast Artnet Timecode
+- MTC out to any MIDI port or Bluetooth MIDI device, outside REAPER's MIDI settings
 
 Art-Net Timecode Receiver: app, Art-Net timecode in, LTC and MTC out. Source, Rate, Latency, LTC device and channel, MTC port. Own installer.
 

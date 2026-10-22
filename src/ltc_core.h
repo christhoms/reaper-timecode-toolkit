@@ -4,6 +4,7 @@
 
 #include "platform.h"
 
+#include <functional>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -467,6 +468,29 @@ inline void save_latency_unit(int unit) {
   }
 }
 
+// mtc.txt: the MTC output, a port id from receiver/io.h ("" = off). Per machine, like the destination.
+inline std::string load_mtc_port() {
+  if (const char *e = std::getenv("CT_MTC_PORT")) return e;  // tests only
+  if (std::getenv("CT_ARTNET_IP")) return "";                // tests
+  std::string line;
+  if (FILE *f = std::fopen((prefs_path() + kSep + "mtc.txt").c_str(), "r")) {
+    char b[128] = {0};
+    if (std::fgets(b, sizeof(b), f)) line = b;
+    std::fclose(f);
+  }
+  while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' ')) line.pop_back();
+  return line;
+}
+
+inline void save_mtc_port(const std::string &id) {
+  if (std::getenv("CT_ARTNET_IP")) return;
+  make_dir(prefs_path());
+  if (FILE *f = std::fopen((prefs_path() + kSep + "mtc.txt").c_str(), "w")) {
+    std::fprintf(f, "%s\n", id.c_str());
+    std::fclose(f);
+  }
+}
+
 // ---- output rate: 0 follows the source; 1..4 = 24, 25, 29.97 DF, 30 ----------------------------------------------
 struct OutRate { int fps; bool df; double clock; int type; };
 inline bool out_rate(int sel, OutRate &r) {
@@ -490,6 +514,7 @@ inline long convert_count(long count, int fps, bool df, const OutRate &o) {
 // back 2 s after its last frame; while the token is held, every other sender stays silent.
 class Sender {
  public:
+  std::function<void(long count, int type, double t)> onSend;  // each frame sent (the sender thread); set before start()
   Sender() : id_(nextId().fetch_add(1)) {
     net_init();
     sock_ = socket(AF_INET, SOCK_DGRAM, 0);
@@ -626,6 +651,7 @@ class Sender {
     const bool emit = mayEmit();
     blocked_.store(!emit, std::memory_order_relaxed);
     if (!emit) return;
+    if (onSend) onSend(count, type_, now_s());  // MTC follows each frame as it leaves
     const Timecode tc = count_to_tc(count, fps_, df_);
     unsigned char p[19] = {'A', 'r', 't', '-', 'N', 'e', 't', 0, 0x00, 0x97, 0, 14, 0, 0,
                            (unsigned char)tc.f, (unsigned char)tc.s, (unsigned char)tc.m, (unsigned char)tc.h, (unsigned char)type_};

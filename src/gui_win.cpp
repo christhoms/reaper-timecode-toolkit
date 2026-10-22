@@ -32,6 +32,7 @@ struct Gui {
   HBRUSH bField = nullptr;
   double scale = 1.0, latShown = 0.0;
   bool ipBad = false, offsetBad = false;
+  std::string mtcName;  // what the MTC box shows
   int ticks = 0, repeatDir = 0;
   int px(double v) const { return int(v * scale + 0.5); }
   RECT rc(double x, double y, double w, double h) const { return RECT{px(x), px(y), px(x + w), px(y + h)}; }
@@ -45,6 +46,7 @@ RECT ifpick_rect(const Gui &g) { return g.rc(84, kBarY + 6, kGuiW - 12 - 92 - 8 
 RECT excl_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 39, 92, 24); }
 RECT rate_rect(const Gui &g) { return g.rc(236, kBarY + 105, 88, 24); }
 RECT offset_rect(const Gui &g) { return g.rc(kGuiW - 12 - 92, kBarY + 105, 92, 24); }
+RECT mtc_rect(const Gui &g) { return g.rc(84, kBarY + 138, kGuiW - 12 - 84, 24); }
 RECT unit_rect(const Gui &g, int i) { return g.rc(184 + i * 27, kBarY + 39, 26, 24); }
 RECT step_rect(const Gui &g, int dir) { return g.rc(160, kBarY + (dir > 0 ? 39 : 51), 18, 12); }
 
@@ -110,6 +112,29 @@ void pick_interface(Gui &g) {  // a popup menu of the interfaces that are up
   const int pick = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, g.hwnd, nullptr);
   DestroyMenu(m);
   if (pick > 0 && size_t(pick) <= ifs.size()) g.plug->setInterface(ifs[pick - 1].addr);
+}
+
+void mtc_name(Gui &g) {
+  g.mtcName = S::mtcOff;
+  if (g.plug->mtcPort.empty()) return;
+  g.mtcName = g.plug->mtcPort;
+  for (const rx::Device &d : rx::midi_outputs()) if (d.id == g.plug->mtcPort) g.mtcName = d.name;
+}
+
+void pick_mtc(Gui &g) {
+  const std::vector<rx::Device> list = rx::midi_outputs();
+  HMENU m = CreatePopupMenu();
+  AppendMenuA(m, MF_STRING | (g.plug->mtcPort.empty() ? MF_CHECKED : 0), 1, S::mtcOff);
+  for (size_t i = 0; i < list.size(); i++) AppendMenuA(m, MF_STRING | (list[i].id == g.plug->mtcPort ? MF_CHECKED : 0), UINT_PTR(i + 2), list[i].name.c_str());
+  RECT r = mtc_rect(g);
+  POINT pt{r.left, r.bottom};
+  ClientToScreen(g.hwnd, &pt);
+  const int pick = TrackPopupMenu(m, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, g.hwnd, nullptr);
+  DestroyMenu(m);
+  if (pick == 1) g.plug->setMtc("");
+  else if (pick > 1 && size_t(pick) <= list.size() + 1) g.plug->setMtc(list[pick - 2].id);
+  else return;
+  mtc_name(g);
 }
 
 void pick_rate(Gui &g) {
@@ -205,6 +230,10 @@ void paint(Gui &g, HDC dc) {
   const bool excl = g.plug->sender.exclusive();
   fill(dc, excl_rect(g), excl ? kSel : kField);
   text(dc, g.fUi, excl ? kText : kDim, S::exclusive, excl_rect(g), DT_CENTER | DT_VCENTER);
+  text(dc, g.fUi, kDim, S::mtc, g.rc(12, kBarY + 139, 70, 22), DT_LEFT | DT_VCENTER);
+  fill(dc, mtc_rect(g), kField);
+  RECT mr = mtc_rect(g); mr.left += g.px(6); mr.right -= g.px(6);
+  text(dc, g.fUi, g.plug->mtcPort.empty() ? kDim : kText, g.mtcName, mr, DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
 }
 
 LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -249,6 +278,7 @@ LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l) {
       { const RECT r = bcast_rect(*g); if (PtInRect(&r, p)) { g->plug->setBroadcast(!g->plug->broadcast); ShowWindow(g->ip, g->plug->broadcast ? SW_HIDE : SW_SHOW); } }
       { const RECT r = ifpick_rect(*g); if (g->plug->broadcast && PtInRect(&r, p)) pick_interface(*g); }
       { const RECT r = rate_rect(*g); if (PtInRect(&r, p)) pick_rate(*g); }
+      { const RECT r = mtc_rect(*g); if (PtInRect(&r, p)) pick_mtc(*g); }
       { const RECT r = offset_rect(*g); if (PtInRect(&r, p)) g->plug->setOffsetFromGui(!g->plug->sender.offsetOn()); }
       { const RECT r = excl_rect(*g); if (PtInRect(&r, p)) g->plug->setExclusiveFromGui(!g->plug->sender.exclusive()); }
       for (int dir : {1, -1}) {
@@ -343,6 +373,7 @@ bool gui_parent(Plugin *s, const clap_window_t *win) {
   SetWindowTextA(g->ip, s->ip.c_str());
   if (s->broadcast) ShowWindow(g->ip, SW_HIDE);
   g->offs = edit(kIdOffset, 90, kBarY + 108, 100, ES_LEFT);
+  mtc_name(*g);
   show_offset(*g);
   show_latency(*g);
   SetTimer(g->hwnd, kTimerTick, 33, nullptr);

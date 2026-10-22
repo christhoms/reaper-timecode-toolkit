@@ -19,6 +19,8 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   NSTextField *_offsetField;
   NSSegmentedControl *_offsetSeg;
   NSPopUpButton *_ratePicker;
+  NSPopUpButton *_mtcPicker;
+  std::vector<rx::Device> _midi;  // what the MTC picker lists, in its order after Off
   NSFont *_fTc, *_fUi;      // looked up once: a lookup that fails mid-session must not reach the draw path
   NSArray<NSColor *> *_colors;  // indexed by UiColor
   int _tickCount;
@@ -163,12 +165,25 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
   _ratePicker.action = @selector(ratePicked:);
   [self addSubview:_ratePicker];
 
+  // MTC row: any MIDI output; Bluetooth MIDI devices are looked for while the picker is open
+  _mtcPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(84, kH - kBar + 138, kW - 12 - 84, 24) pullsDown:NO];
+  _mtcPicker.controlSize = NSControlSizeSmall;
+  _mtcPicker.font = [NSFont systemFontOfSize:11];
+  _mtcPicker.target = self;
+  _mtcPicker.action = @selector(mtcPicked:);
+  [self addSubview:_mtcPicker];
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(mtcWillPop:) name:NSPopUpButtonWillPopUpNotification object:_mtcPicker];
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(mtcClosed:) name:NSMenuDidEndTrackingNotification object:_mtcPicker.menu];
+  [self fillMtc];
+
   _timer = [NSTimer timerWithTimeInterval:1.0 / 30.0 target:self selector:@selector(tick:) userInfo:nil repeats:YES];
   [[NSRunLoop mainRunLoop] addTimer:_timer forMode:NSRunLoopCommonModes];
   return self;
 }
 
 - (void)shutdown {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  rx::bluetooth_scan(false, nullptr);
   [_timer invalidate];
   _timer = nil;
   _plug = nullptr;
@@ -236,6 +251,43 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
 
 - (void)ratePicked:(id)sender {
   if (_plug) _plug->setRateFromGui((int)_ratePicker.indexOfSelectedItem);
+}
+
+// the MTC list is read again each time the picker opens
+- (void)fillMtc {
+  if (!_plug) return;
+  _midi = rx::midi_outputs();
+  [_mtcPicker removeAllItems];
+  [_mtcPicker addItemWithTitle:@(S::mtcOff)];
+  NSInteger sel = 0;
+  for (size_t i = 0; i < _midi.size(); i++) {
+    [_mtcPicker addItemWithTitle:@""];  // titles may repeat: set them after adding
+    _mtcPicker.lastItem.title = @(_midi[i].name.c_str());
+    if (_midi[i].id == _plug->mtcPort) sel = (NSInteger)i + 1;
+  }
+  [_mtcPicker selectItemAtIndex:sel];
+}
+- (void)mtcWillPop:(NSNotification *)n {
+  [self fillMtc];
+  __weak RTTView *weak = self;
+  rx::bluetooth_scan(true, [weak] { dispatch_async(dispatch_get_main_queue(), ^{ [weak bluetoothFound]; }); });
+}
+- (void)mtcClosed:(NSNotification *)n { rx::bluetooth_scan(false, nullptr); }
+- (void)bluetoothFound {  // found while the picker is open: added to the end of the open list
+  for (const rx::Device &d : rx::midi_outputs()) {
+    bool listed = false;
+    for (const rx::Device &m : _midi) listed = listed || m.id == d.id;
+    if (listed) continue;
+    _midi.push_back(d);
+    [_mtcPicker addItemWithTitle:@""];
+    _mtcPicker.lastItem.title = @(d.name.c_str());
+  }
+}
+- (void)mtcPicked:(id)sender {
+  if (!_plug) return;
+  const NSInteger k = _mtcPicker.indexOfSelectedItem;
+  _plug->setMtc(k > 0 && (size_t)k <= _midi.size() ? _midi[k - 1].id : "");
+  [self fillMtc];
 }
 
 - (void)offsetChanged:(id)sender {
@@ -348,6 +400,7 @@ static const CGFloat kW = kGuiW, kH = kGuiH, kBar = kGuiBar;
     [self draw:S::latency at:NSMakePoint(12, kH - kBar + 43) color:kUiDim rightAligned:NO];
     [self draw:S::source at:NSMakePoint(12, kH - kBar + 77) color:kUiDim rightAligned:NO];
     [self draw:S::rateLabel at:NSMakePoint(202, kH - kBar + 110) color:kUiDim rightAligned:NO];
+    [self draw:S::mtc at:NSMakePoint(12, kH - kBar + 143) color:kUiDim rightAligned:NO];
     [self draw:u.latencyNote.c_str() at:NSMakePoint(248, kH - kBar + 43) color:kUiDim rightAligned:NO];
   } @catch (NSException *e) {
     NSLog(@"Reaper Timecode Toolkit: draw failed: %@", e);

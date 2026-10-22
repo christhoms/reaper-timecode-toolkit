@@ -1,8 +1,11 @@
 // Tests for Reaper Timecode Toolkit: timecode maths, LTC decoding (synthetic LTC at 24 / 25 / 29.97 DF / 30), the
-// Art-Net sender's packet content + timing, and the built .clap loaded through its real entry point.
+// Art-Net sender's packet content + timing, and the built .clap loaded through its real entry point (with its MTC on macOS).
 //   ./test_core [path to the plugin binary]
 #ifndef _WIN32
 #include <dlfcn.h>
+#endif
+#ifdef __APPLE__
+#include <CoreMIDI/CoreMIDI.h>
 #endif
 
 #include <vector>
@@ -531,6 +534,74 @@ static void test_sender(Listener &L) {
 }
 
 // ---- the real plugin through its CLAP entry ------------------------------------------------------------------
+#ifdef __APPLE__
+// a private MIDI destination: the plugin's MTC lands here (CT_MTC_PORT), never on a real port
+struct MidiSink {
+  MIDIClientRef client = 0;
+  MIDIEndpointRef dest = 0;
+  std::mutex mu;
+  std::vector<std::pair<double, std::vector<unsigned char>>> msgs;
+  SInt32 open() {
+    MIDIClientCreate(CFSTR("test_core"), nullptr, nullptr, &client);
+    MIDIDestinationCreateWithBlock(client, CFSTR("test_core MTC"), &dest, ^(const MIDIPacketList *pl, void *) {
+      const MIDIPacket *pk = &pl->packet[0];
+      for (UInt32 i = 0; i < pl->numPackets; i++) {
+        std::lock_guard<std::mutex> g(mu);
+        msgs.push_back({now_s(), std::vector<unsigned char>(pk->data, pk->data + pk->length)});
+        pk = MIDIPacketNext(pk);
+      }
+    });
+    SInt32 id = 0;
+    MIDIObjectGetIntegerProperty(dest, kMIDIPropertyUniqueID, &id);
+    return id;
+  }
+  void clear() { std::lock_guard<std::mutex> g(mu); msgs.clear(); }
+};
+static MidiSink g_sink;
+
+// MTC from the plugin against its Art-Net: each set of 8 quarter frames names the frame running when piece 0 went out
+static void check_mtc(Listener &L, const char *name, int fps, bool df, int rateCode, double dur) {
+  std::lock_guard<std::mutex> g1(L.mu), g2(g_sink.mu);
+  int quarters = 0, fulls = 0, order = 0, expect = 0, nint = 0, sets = 0, wrongRate = 0;
+  long worstFrames = 0;
+  double prev = 0, sum = 0, worst = 0, offSum = 0, offWorst = 0, tPiece0 = 0;
+  int qf[8] = {0};
+  const double tFirst = L.pk.empty() ? 0 : L.pk.front().first, tLast = L.pk.empty() ? 0 : L.pk.back().first;
+  int after = 0;  // sets begun after the last packet: MTC runs on for the frame the timeline carries past it
+  for (auto &x : g_sink.msgs) {
+    if (x.second.size() == 10 && x.second[0] == 0xF0 && x.second[1] == 0x7F && x.second[3] == 0x01) { fulls++; continue; }
+    if (x.second.size() != 2 || x.second[0] != 0xF1) continue;
+    const int piece = x.second[1] >> 4;
+    if (quarters && piece != expect) order++;
+    expect = (piece + 1) % 8;
+    if (quarters && x.first - tFirst > 0.5) { const double d = x.first - prev; sum += d; nint++; worst = std::max(worst, std::fabs(d - dur / 4)); }
+    prev = x.first;
+    quarters++;
+    qf[piece] = x.second[1] & 15;
+    if (piece == 0) tPiece0 = x.first;
+    if (piece == 7 && tPiece0 > tLast + dur / 2) after++;
+    else if (piece == 7 && tPiece0 > 0) {
+      const long cnt = tc_to_count(qf[6] | ((qf[7] & 1) << 4), qf[4] | (qf[5] << 4), qf[2] | (qf[3] << 4), qf[0] | (qf[1] << 4), fps, df);
+      if ((qf[7] >> 1) != rateCode) wrongRate++;
+      const std::pair<double, std::vector<unsigned char>> *near = nullptr;  // the Art-Net packet closest in time to piece 0
+      for (auto &p : L.pk) if (p.second.size() == 19 && (!near || std::fabs(p.first - tPiece0) < std::fabs(near->first - tPiece0))) near = &p;
+      if (near && std::fabs(near->first - tPiece0) < dur) {
+        const auto &b = near->second;
+        worstFrames = std::max(worstFrames, std::labs(cnt - tc_to_count(b[17], b[16], b[15], b[14], fps, df)));
+        const double off = (tPiece0 - near->first) * 1e3;
+        offSum += off; offWorst = std::max(offWorst, std::fabs(off)); sets++;
+      }
+    }
+  }
+  std::printf("  %s MTC: %d quarter frames, mean interval %.3f ms (quarter frame %.3f ms), worst deviation %.2f ms, %d full frame(s)\n",
+              name, quarters, nint ? sum / nint * 1e3 : 0.0, dur / 4 * 1e3, worst * 1e3, fulls);
+  std::printf("  %s MTC against Art-Net: %d sets, %ld frames apart at worst, piece 0 %+.2f ms from the packet (worst %.2f ms); %d set(s) after the last packet\n",
+              name, sets, worstFrames, sets ? offSum / sets : 0.0, offWorst, after);
+  CHECK(quarters > 200 && order == 0 && fulls >= 1 && wrongRate == 0, "%s MTC: %d quarters, %d out of order, %d full, %d wrong rate codes", name, quarters, order, fulls, wrongRate);
+  CHECK(sets > 25 && worstFrames == 0 && offWorst < 5.0 && after <= 1, "%s MTC position: %d sets, %ld frames off, worst %.2f ms", name, sets, worstFrames, offWorst);
+}
+#endif
+
 static const void *host_get_ext(const clap_host_t *, const char *) { return nullptr; }
 static void host_noop(const clap_host_t *) {}
 
@@ -559,6 +630,9 @@ static void test_plugin(const char *path, Listener &L) {
   const double sr = 48000; const uint32_t bs = 512;
   CHECK(p->activate(p, sr, bs, bs) && p->start_processing(p), "activate");
   L.clear();
+#ifdef __APPLE__
+  g_sink.clear();
+#endif
   long start = tc_to_count(6, 29, 59, 0, 30, true);  // The Prince block, drop-frame, crossing a minute
   LtcGen gen(sr, 30, 30000.0 / 1001.0, true, start);
   std::vector<float> l(bs), r(bs), ol(bs), orr(bs);
@@ -585,6 +659,9 @@ static void test_plugin(const char *path, Listener &L) {
   std::printf("  one-sided LTC: right output carries the left leg from %.0f ms\n", switchedAt * 1e3);
   CHECK(leftOk && earlyThru && lateBoth && switchedAt > 0 && switchedAt < 0.3, "one-sided routing (left %d, early %d, late %d, at %.3f s)", leftOk, earlyThru, lateBoth, switchedAt);
   check_packets(L, "plugin, 29.97 DF on the RIGHT channel", 30, true, 1001.0 / 30000.0, -1, 80);
+#ifdef __APPLE__
+  check_mtc(L, "plugin, 29.97 DF", 30, true, 2, 1001.0 / 30000.0);
+#endif
   {
     std::lock_guard<std::mutex> g(L.mu);
     if (!L.pk.empty()) {
@@ -795,6 +872,9 @@ int main(int argc, char **argv) {
   test_router();
   test_daw_core();
   test_sender(L);
+#ifdef __APPLE__
+  set_env("CT_MTC_PORT", std::to_string(g_sink.open()).c_str());
+#endif
   if (argc > 1) test_plugin(argv[1], L);
   std::printf(g_fail ? "\n%d check(s) FAILED\n" : "\nall checks passed\n", g_fail);
   return g_fail ? 1 : 0;
