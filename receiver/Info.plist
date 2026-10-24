@@ -6,8 +6,8 @@
   <key>CFBundleIdentifier</key><string>uk.co.christhoms.artnet-timecode-receiver</string>
   <key>CFBundleName</key><string>Art-Net Timecode Receiver</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>2.2.0</string>
-  <key>CFBundleShortVersionString</key><string>2.2.0</string>
+  <key>CFBundleVersion</key><string>2.3.0</string>
+  <key>CFBundleShortVersionString</key><string>2.3.0</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSLocalNetworkUsageDescription</key><string>Receives Art-Net timecode.</string>

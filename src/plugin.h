@@ -8,7 +8,7 @@
 #include "../receiver/core.h"
 #include "../receiver/io.h"
 
-#define RTT_VERSION "2.2.0"
+#define RTT_VERSION "2.3.0"
 
 struct Plugin {
   clap_plugin_t plugin;
