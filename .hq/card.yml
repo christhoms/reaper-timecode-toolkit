@@ -9,7 +9,7 @@ memory:
   - README.md
   - CLAUDE.md
 focus: >
-  2.1.0 released. Branch `receiver` (2.2.0): companion app Art-Net Timecode Receiver (Art-Net TC in, LTC + MTC out),
-  built and tested on Windows and Mac. Blocked on Apple: developer agreement expired (notarytool 403). Then
-  `./build.sh dist`, install both Mac pkgs, merge to main, release 2.2.0 (hq/docs/timecode-receiver-mac.md steps 5-6).
-updated: 2026-10-14
+  2.3.0 released (plugin MTC out with Bluetooth through a bundled helper, Bluetooth MIDI in the receiver, Timecode
+  Loopback on macOS). Untested in use: plugin Bluetooth through the helper, the plugin in REAPER, the Windows MTC row.
+  Open: Windows loopback driver (needs an EV certificate and Microsoft attestation).
+updated: 2026-10-27
